@@ -3,141 +3,228 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>agent-sm run</title>
+<title>agent-sm</title>
 <style>
   :root {
-    --bg: #fafaf8; --panel: #fff; --ink: #1d1f23; --mute: #6b7078; --line: #d9dbe0;
-    --node: #eef0f4; --node-ink: #1d1f23; --live: #1f6feb; --done: #2da44e; --bad: #cf222e; --warn: #bf8700;
-    --edge: #9aa0aa; --taken: #1f6feb;
+    --bg: #f4f5f8; --panel: #fff; --soft: #f0f2f6; --ink: #16181d; --mute: #667085; --line: #e2e5ec;
+    --accent: #4f46e5; --accent-soft: #eef0ff; --on-accent: #fff;
+    --ok: #15803d; --ok-soft: #e6f5eb; --bad: #c81e1e; --bad-soft: #fdecec; --warn: #a45a06; --warn-soft: #fcf1dd;
+    --term: #0f1117; --term-ink: #d7dbe4; --term-mute: #7c8597; --term-tool: #8ab4ff; --term-bad: #ff8a8a;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 4px 14px rgba(16, 24, 40, .04);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #14161a; --panel: #1b1e24; --ink: #e6e8ec; --mute: #9aa0aa; --line: #2c3038;
-      --node: #262a32; --node-ink: #e6e8ec; --live: #58a6ff; --done: #3fb950; --bad: #f85149; --warn: #d29922;
-      --edge: #6b7280; --taken: #58a6ff;
+      --bg: #0d0f13; --panel: #161920; --soft: #1e222b; --ink: #e7e9ee; --mute: #8b93a3; --line: #272c37;
+      --accent: #8b93ff; --accent-soft: #22254a; --on-accent: #0d0f13;
+      --ok: #4ade80; --ok-soft: #12301f; --bad: #f87171; --bad-soft: #3a1717; --warn: #fbbf24; --warn-soft: #3a2c0d;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4);
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
-  main { max-width: 1040px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--mute); margin: 20px 0 8px; }
-  .sub { color: var(--mute); }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
-  .card b { display: block; font-size: 20px; }
-  .card span { color: var(--mute); font-size: 12px; }
-  .st { border-bottom: 1px solid var(--line); }
-  .st:last-child { border-bottom: 0; }
-  .st summary { display: grid; grid-template-columns: 16px 110px 44px 130px 1fr auto; gap: 8px; align-items: center; padding: 7px 4px; cursor: pointer; list-style: none; }
-  .st summary::-webkit-details-marker { display: none; }
-  .st summary:hover { background: var(--node); }
-  .st summary:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--live); outline-offset: 1px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--edge); }
-  .st.visited .dot { background: var(--done); border-color: var(--done); }
-  .st.live .dot { background: var(--live); border-color: var(--live); animation: pulse 1.2s ease-in-out infinite; }
-  .st.live summary b { color: var(--live); }
-  @keyframes pulse { 50% { opacity: .35; } }
-  @media (prefers-reduced-motion: reduce) { .st.live .dot { animation: none; } }
-  .st .mute, .mute { color: var(--mute); font-size: 12px; }
-  .st .body { padding: 2px 4px 10px 28px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .mute { color: var(--mute); }
+  .ok { color: var(--ok); } .no { color: var(--bad); } .wait { color: var(--warn); }
+
+  /* top bar */
+  .top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .top-in { max-width: 1180px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .brand { font-weight: 700; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  .logo { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; }
+  .logo::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--on-accent); }
+  .tag { font-family: var(--mono); font-size: 12px; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px 2px 8px; font-size: 12px; font-weight: 600; background: var(--soft); color: var(--mute); }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill.run { background: var(--accent-soft); color: var(--accent); } .pill.run::before { animation: pulse 1.2s ease-in-out infinite; }
+  .pill.good { background: var(--ok-soft); color: var(--ok); } .pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .grow { flex: 1; min-width: 0; }
+  #line { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 8px 20px 60px; }
+  section { margin-top: 26px; }
+  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  h2 { font-size: 15px; margin: 0; letter-spacing: -.01em; }
+  .head .count { font-size: 12px; color: var(--mute); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+
+  /* controls */
+  .field { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); min-width: 0; }
+  input.field::placeholder { color: var(--mute); }
+  .btn { padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; font-weight: 600; transition: background .12s, border-color .12s; }
+  .btn:hover:not(:disabled) { background: var(--soft); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+  .btn.danger { color: var(--bad); }
+  .btn:disabled { opacity: .45; cursor: default; }
+
+  /* issues */
+  .issues { display: none; } .issues.on { display: block; }
+  .igrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; max-height: 372px; overflow: auto; padding: 2px; }
+  .icard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; box-shadow: var(--shadow); transition: border-color .12s, transform .12s; }
+  .icard:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .icard input { position: absolute; opacity: 0; pointer-events: none; }
+  .icard:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .icard:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .icard.busy { cursor: default; opacity: .75; } .icard.busy:hover { transform: none; border-color: var(--line); }
+  .i-top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--mute); }
+  .i-num { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+  .check { margin-left: auto; width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--line); display: grid; place-items: center; background: var(--panel); }
+  .icard:has(input:checked) .check { background: var(--accent); border-color: var(--accent); }
+  .icard:has(input:checked) .check::after { content: ""; width: 9px; height: 5px; border: 2px solid var(--on-accent); border-top: 0; border-right: 0; transform: rotate(-45deg) translateY(-1px); }
+  .i-title { font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .i-labels { display: flex; flex-wrap: wrap; gap: 4px; }
+  .lbl { font-size: 11px; border-radius: 999px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--c, var(--mute)) 45%, transparent); background: color-mix(in srgb, var(--c, var(--mute)) 14%, transparent); }
+  .empty { padding: 28px; text-align: center; color: var(--mute); }
+  .runbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px; }
+  .runbar label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--mute); }
+  .runbar input[type=number] { width: 74px; }
+  .queue { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; font-size: 12px; align-items: center; }
+  #msg { color: var(--bad); font-size: 13px; margin-top: 8px; }
+
+  /* run summary */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .stat { padding: 12px 14px; }
+  .stat span { display: block; font-size: 12px; color: var(--mute); }
+  .stat b { display: block; font-size: 20px; letter-spacing: -.02em; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  details.feed { margin-top: 10px; background: var(--term); color: var(--term-ink); border-radius: 12px; overflow: hidden; }
+  details.feed summary { cursor: pointer; padding: 9px 14px; font: 12px var(--mono); color: var(--term-mute); }
+  #feed { font: 12px/1.6 var(--mono); max-height: 280px; overflow: auto; padding: 0 14px 12px; }
+  #feed div { white-space: pre-wrap; word-break: break-word; }
+  #feed .t { color: var(--term-mute); margin-right: 10px; }
+  #feed .tool { color: var(--term-tool); } #feed .error { color: var(--term-bad); }
+
+  /* pipeline */
+  .pipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 18px; }
+  .node { position: relative; text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 11px 12px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; box-shadow: var(--shadow); transition: border-color .12s, transform .12s; }
+  .node:hover { transform: translateY(-1px); border-color: var(--accent); }
+  .node:not(:last-child)::after { content: ""; position: absolute; right: -13px; top: 50%; width: 7px; height: 7px; border-top: 2px solid var(--line); border-right: 2px solid var(--line); transform: translateY(-50%) rotate(45deg); }
+  .node[aria-pressed=true] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .n-top { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mute); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--line); }
+  .node.visited .dot { background: var(--ok); border-color: var(--ok); }
+  .node.failed .dot { background: var(--bad); border-color: var(--bad); }
+  .node.live .dot { background: var(--accent); border-color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .node.live { border-color: var(--accent); }
+  .node b { font-size: 14px; }
+  .node .res { font-size: 12px; font-weight: 600; min-height: 18px; }
+  .node .cost { font-size: 11px; color: var(--mute); font-family: var(--mono); min-height: 16px; }
+  .bar { height: 4px; border-radius: 2px; background: var(--soft); overflow: hidden; margin-top: 4px; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+  #detail { margin-top: 12px; padding: 14px 16px; }
+  #detail h3 { margin: 0 0 2px; font-size: 15px; }
+  .sub { font-size: 12px; color: var(--mute); margin: 12px 0 6px; text-transform: uppercase; letter-spacing: .05em; }
   .outs { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { border: 1px solid var(--line); border-radius: 12px; padding: 1px 9px; font-size: 12px; color: var(--mute); }
-  .chip.taken { border-color: var(--taken); color: var(--taken); font-weight: 600; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--mute); background: var(--panel); white-space: nowrap; }
+  .chip.taken { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
   .chip.limit { border-style: dashed; }
-  .chip.exit::after { content: " (ends the run)"; font-weight: 400; }
-  pre { font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 8px 0 0; max-height: 320px; overflow: auto; }
-  details.feed summary { cursor: pointer; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  th { color: var(--mute); font-weight: 500; }
+  .chip.good { background: var(--ok-soft); color: var(--ok); border-color: transparent; font-weight: 600; }
+  .chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; font-weight: 600; }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; font-weight: 600; }
+  .chip.run { background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 600; }
+  pre { font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--soft); border-radius: 8px; padding: 10px 12px; margin: 0; max-height: 340px; overflow: auto; }
+
+  /* steps */
   .tablewrap { overflow-x: auto; }
-  .ok { color: var(--done); } .no { color: var(--bad); } .wait { color: var(--warn); }
-  .issues { display: none; }
-  .issues.on { display: block; }
-  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
-  .toolbar input[type=text] { flex: 1; min-width: 160px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-  .toolbar input[type=number] { width: 70px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-  .toolbar select { padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-  button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--node); color: var(--ink); cursor: pointer; font: inherit; }
-  button.primary { background: var(--live); border-color: var(--live); color: #fff; }
-  button:disabled { opacity: .5; cursor: default; }
-  .listbox { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
-  .listbox tr:hover { background: var(--node); }
-  .lbl { font-size: 11px; color: var(--mute); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; margin-left: 4px; }
-  #qstate { color: var(--mute); margin-top: 8px; }
-  code { font: 12px ui-monospace, monospace; }
-  #feed { font: 12px/1.5 ui-monospace, monospace; max-height: 260px; overflow: auto; }
-  #feed div { white-space: pre-wrap; word-break: break-word; padding: 1px 0; }
-  #feed .t { color: var(--mute); margin-right: 8px; }
-  #feed .tool { color: var(--live); } #feed .say { color: var(--ink); } #feed .error { color: var(--bad); }
-  .legend { color: var(--mute); font-size: 12px; margin-top: 6px; }
-  @media (max-width: 640px) { .st summary { grid-template-columns: 16px 1fr auto; } .st summary .wide { display: none; } }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  th { color: var(--mute); font-weight: 500; font-size: 12px; background: var(--soft); }
+  th:first-child { border-top-left-radius: 12px; } th:last-child { border-top-right-radius: 12px; }
+  td.r, th.r { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: var(--soft); }
+  .costcell { position: relative; }
+  .costcell i { position: absolute; left: 12px; right: 12px; bottom: 4px; height: 3px; border-radius: 2px; background: linear-gradient(to left, var(--accent) var(--w, 0%), transparent 0); opacity: .7; }
+  .den + .den { margin-top: 12px; }
+  .den pre { margin-top: 6px; }
+
+  @media (max-width: 640px) {
+    .top-in, main { padding-left: 16px; padding-right: 16px; }
+    .node:not(:last-child)::after { display: none; }
+    .pipe { gap: 10px; grid-template-columns: repeat(2, 1fr); }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1>agent-sm <span id="issue" class="sub"></span></h1>
+<header class="top"><div class="top-in">
+  <div class="brand"><span class="logo"></span>agent-sm</div>
+  <span class="tag" id="issue">no run</span>
+  <span class="pill" id="pill">idle</span>
+  <div class="grow mute" id="line">waiting for data...</div>
+  <b class="num" id="cost"></b>
+</div></header>
 
+<main>
   <section class="issues" id="issuesPanel">
-    <h2>Process an issue</h2>
-    <div class="panel">
-      <div class="toolbar">
-        <input type="text" id="filter" placeholder="filter open issues by number, title or label">
-        <button id="refresh">Refresh</button>
-      </div>
-      <div class="listbox tablewrap"><table id="issueTable"><tbody></tbody></table></div>
-      <div class="toolbar" style="margin-top:8px">
-        <label>Publish <select id="publish"><option value="">local only (staged branch)</option><option value="pr">open a draft PR</option></select></label>
-        <label><input type="checkbox" id="audit"> audit mode</label>
-        <label>Budget per step $ <input type="number" id="budget" value="2" min="0.5" step="0.5"></label>
-        <button class="primary" id="runBtn" disabled>Run selected</button>
-        <button id="stopBtn">Stop</button>
-      </div>
-      <div id="qstate"></div>
+    <div class="head">
+      <h2>Open issues</h2><span class="count" id="issueCount"></span>
+      <input class="field grow" type="text" id="filter" placeholder="Filter by number, title or label" aria-label="Filter issues">
+      <button class="btn" id="refresh">Refresh</button>
     </div>
+    <div class="igrid" id="issueGrid"></div>
+    <div class="panel runbar">
+      <b id="selCount">Nothing selected</b>
+      <span class="grow"></span>
+      <label>Publish <select class="field" id="publish"><option value="">local branch only</option><option value="pr">open a draft PR</option></select></label>
+      <label>Budget per step $ <input class="field" type="number" id="budget" value="2" min="0.5" step="0.5"></label>
+      <label><input type="checkbox" id="audit"> audit mode</label>
+      <button class="btn danger" id="stopBtn" disabled>Stop</button>
+      <button class="btn primary" id="runBtn" disabled>Run</button>
+    </div>
+    <div class="queue" id="qstate"></div>
+    <div id="msg" role="alert"></div>
   </section>
 
-  <h2>Now</h2>
-  <div class="cards panel" id="cards"></div>
+  <section>
+    <div class="head"><h2>Current run</h2></div>
+    <div class="stats" id="cards"></div>
+    <details class="feed" id="feedBox">
+      <summary id="feedSum">Agent activity</summary>
+      <div id="feed"></div>
+    </details>
+  </section>
 
-  <details class="panel feed" id="feedBox" style="margin-top:8px">
-    <summary><span id="line" class="sub">waiting for data...</span></summary>
-    <div id="feed"></div>
-  </details>
+  <section>
+    <div class="head"><h2>Pipeline</h2><span class="count">Select a state to see where its results lead and what it last returned.</span></div>
+    <div class="pipe" id="pipe"></div>
+    <div class="panel" id="detail"></div>
+  </section>
 
-  <h2>States</h2>
-  <div class="panel" id="outline"></div>
-  <div class="legend">Open a state to see where each result leads and what it last returned. Blue: running now. Green: has run. Dashed result: only after the retry limit.</div>
+  <section>
+    <div class="head"><h2>Steps</h2><span class="count" id="stepCount"></span></div>
+    <div class="panel tablewrap"><table><thead><tr><th>#</th><th>state</th><th>unit</th><th>result</th><th>model</th><th class="r">turns</th><th class="r">min</th><th class="r">tools</th><th class="r">denied</th><th class="r">step $</th><th class="r">run $</th></tr></thead><tbody id="steps"></tbody></table></div>
+  </section>
 
-  <h2>Steps of this run</h2>
-  <div class="panel tablewrap"><table id="steps"><thead><tr><th>#</th><th>state</th><th>unit</th><th>result</th><th>model</th><th>turns</th><th>min</th><th>tool calls</th><th>denied</th><th>step $</th><th>run $</th></tr></thead><tbody></tbody></table></div>
-
-  <div id="deniedBox" hidden>
-    <h2>Denied commands</h2>
-    <div class="panel"><div class="mute">The agent asked for these and the allow list refused them. Add them to the state's allow list or change its prompt.</div><div id="denied"></div></div>
-  </div>
+  <section id="deniedBox" hidden>
+    <div class="head"><h2>Denied commands</h2><span class="count">The agent asked for these and the allow list refused them. Add them to the state's allow list or change its prompt.</span></div>
+    <div class="panel" style="padding:14px 16px" id="denied"></div>
+  </section>
 </main>
 <script>
-let EDGES = [];
 const TOKEN = "__TOKEN__";
-let ISSUES = [], SEL = new Set(), CAN_RUN = false, BUSY = false;
+let EDGES = [], ISSUES = [], QUEUE = {}, SEL = new Set(), CAN_RUN = false, BUSY = false, RUNNING = false, PICKED = null, TIMER;
+const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
 // put sets an element's HTML only when it changed, so scroll positions and focus survive a poll.
 const LAST = {};
-function put(id, html) { if (LAST[id] !== html) { LAST[id] = html; document.getElementById(id).innerHTML = html; } }
-const OPEN = new Set(); // states the reader opened in the outline
-const BADOUT = ["fail", "blocked", "invalid", "split", "escalate", "timeout", "over-budget"];
-const outCls = o => BADOUT.includes(o) ? "no" : (o === "more" ? "wait" : "ok");
-const pretty = r => { try { return JSON.stringify(JSON.parse(r), null, 2); } catch { return r; } }; // a cut result is not valid JSON
-
+function put(id, html) { if (LAST[id] !== html) { LAST[id] = html; $(id).innerHTML = html; } }
 const fmt = (n, d = 2) => (n == null ? "-" : Number(n).toFixed(d));
 const sec = s => s == null ? "-" : (s >= 60 ? Math.floor(s / 60) + "m " + (s % 60) + "s" : s + "s");
+const BADOUT = ["fail", "blocked", "invalid", "split", "escalate", "timeout", "over-budget"];
+const outCls = o => BADOUT.includes(o) ? "no" : (o === "more" ? "wait" : "ok");
+const exitCls = x => x === "ready" ? "good" : (x === "stopped" || x === "split" ? "warn" : "bad");
+const pretty = r => { try { return JSON.stringify(JSON.parse(r), null, 2); } catch { return r; } }; // a cut result is not valid JSON
+function age(iso) {
+  const m = (Date.now() - Date.parse(iso)) / 60000;
+  return m < 60 ? Math.max(1, Math.round(m)) + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago";
+}
 
-let RUNNING = false;
 function render(data) {
-  document.getElementById("issue").textContent = data.issue ? "#" + data.issue : "(no run yet)";
+  $("issue").textContent = data.issue ? "#" + data.issue : "no run";
   const events = data.events || [], st = data.status;
   const exitEv = events.filter(e => e.exit).pop();
   // Each agent session logs its stats just before its step's result: join them.
@@ -169,62 +256,93 @@ function render(data) {
   const stale = !exitEv && live && idleMin >= 10; // a killed process leaves no exit event
   RUNNING = !!live && !stale;
 
+  const pill = $("pill");
+  pill.className = "pill " + (exitEv ? exitCls(exitEv.exit) : stale ? "warn" : live ? "run" : "");
+  pill.textContent = exitEv ? exitEv.exit : stale ? "no update for " + idleMin + " min" : live ? live : "idle";
   const cost = exitEv ? exitEv.cost_usd : (lastStep ? lastStep.cost_usd : 0);
-  const cards = [];
-  cards.push(["state", exitEv ? "ended: " + exitEv.exit : (live || "idle"), exitEv ? (exitEv.exit === "ready" ? "ok" : "no") : "wait"]);
-  if (stale) cards.push(["no update; the run may have been killed", idleMin + " min", "no"]);
-  if (session && st.units > 0) cards.push(["unit", st.unit_index + " / " + st.units + " " + esc(st.unit || ""), ""]);
-  if (session && !stale) { cards.push(["this step", sec(st.elapsed_s), ""]); cards.push(["tool calls", st.tool_calls, ""]); }
-  cards.push(["run cost", "$" + fmt(cost) + (exitEv && exitEv.sessions_with_unknown_cost ? " + ?" : ""), ""]);
-  put("cards", cards.map(c => `<div class="card"><b class="${c[2]}">${c[1]}</b><span>${c[0]}</span></div>`).join(""));
+  const unknown = exitEv && exitEv.sessions_with_unknown_cost;
+  $("cost").textContent = data.issue ? "$" + fmt(cost) + (unknown ? " + ?" : "") : "";
   document.title = (data.issue ? "#" + data.issue + " " : "") + (exitEv ? exitEv.exit : (live || "idle")) + " - agent-sm";
 
   const feed = (st && st.feed) || [];
-  document.getElementById("line").textContent = session && st.last_tool
-    ? "last: " + st.last_tool + (st.last_command ? " (" + st.last_command + ")" : "") + " at " + st.updated.slice(11, 19) + " - open for the last " + feed.length + " lines"
-    : (exitEv ? "run finished" : (live ? live + " is running (no agent activity to show)" : "waiting for the first step"));
+  $("line").textContent = session && st.last_tool
+    ? st.last_tool + (st.last_command ? " (" + st.last_command + ")" : "") + " at " + st.updated.slice(11, 19)
+    : exitEv ? "run finished" : stale ? "the run may have been killed" : live ? live + " is running" : "no run yet";
+  $("feedSum").textContent = feed.length ? "Agent activity, last " + feed.length + " lines" : "Agent activity (nothing yet)";
   put("feed", feed.slice().reverse().map(f => `<div><span class="t">${f.t}</span><span class="${f.kind}">${f.kind === "say" ? "says: " : ""}${esc(f.text)}</span></div>`).join(""));
 
+  const cards = [["State", exitEv ? "ended: " + exitEv.exit : (live || "idle"), exitEv ? (exitEv.exit === "ready" ? "ok" : "no") : ""]];
+  if (session && st.units > 0) cards.push(["Unit", st.unit_index + " / " + st.units + " " + esc(st.unit || ""), ""]);
+  if (session && !stale) { cards.push(["This step", sec(st.elapsed_s), ""]); cards.push(["Tool calls", st.tool_calls, ""]); }
+  cards.push(["Steps run", steps.length, ""]);
+  cards.push(["Run cost", "$" + fmt(cost) + (unknown ? " + ?" : ""), ""]);
+  put("cards", cards.map(c => `<div class="panel stat"><span>${c[0]}</span><b class="${c[2]}">${c[1]}</b></div>`).join(""));
+
   const names = [...new Set(EDGES.map(e => e.from))];
-  put("outline", names.map(name => {
+  const sel = PICKED || live || (lastStep && lastStep.state) || names[0];
+  put("pipe", names.map(name => {
     const p = per[name] || { visits: 0, cost: 0 };
-    const chips = EDGES.filter(e => e.from === name).map(e => {
-      const n = taken[name + "|" + e.out + "|" + e.to];
-      return `<span class="chip${n ? " taken" : ""}${e.limit ? " limit" : ""}${e.exit ? " exit" : ""}" title="${e.limit ? "only after the retry limit" : ""}">${e.out} &rarr; ${e.to}${n > 1 ? " x" + n : ""}</span>`;
-    }).join("");
-    const res = p.last && p.last.s && p.last.s.result;
-    return `<details class="st${p.visits ? " visited" : ""}${live === name ? " live" : ""}" data-s="${name}"${OPEN.has(name) ? " open" : ""}>
-      <summary><span class="dot"></span><b>${name}</b><span class="mute">${p.visits ? "x" + p.visits : ""}</span>
-        <span class="mute wide">${esc(p.model || "")}</span>
-        <span class="wide ${p.last ? outCls(p.last.out) : "mute"}">${live === name ? "running" : (p.last ? "last: " + p.last.out : "not run")}</span>
-        <span class="mute">${p.cost ? "$" + fmt(p.cost) + " (" + Math.round(100 * p.cost / total) + "%)" : ""}</span></summary>
-      <div class="body"><div class="outs">${chips}</div>${res ? `<pre>${esc(pretty(res))}</pre>` : (p.model ? '<div class="mute">no result returned</div>' : "")}</div>
-    </details>`;
+    const failed = p.last && BADOUT.includes(p.last.out) && live !== name;
+    const share = total ? Math.round(100 * p.cost / total) : 0;
+    return `<button class="node${p.visits ? " visited" : ""}${failed ? " failed" : ""}${live === name ? " live" : ""}" data-s="${name}" aria-pressed="${sel === name}">
+      <span class="n-top"><span class="dot"></span>${live === name ? "running" : (p.visits ? "ran " + p.visits + "x" : "not run")}</span>
+      <b>${name}</b>
+      <span class="res ${p.last ? outCls(p.last.out) : ""}">${p.last ? p.last.out : ""}</span>
+      <span class="cost">${p.cost ? "$" + fmt(p.cost) + " · " + share + "%" : ""}</span>
+      <span class="bar"><i style="width:${share}%"></i></span>
+    </button>`;
   }).join(""));
 
-  put("steps", "<thead>" + document.querySelector("#steps thead").innerHTML + "</thead><tbody>" + steps.map((e, i) => {
+  const p = per[sel] || { visits: 0, cost: 0 };
+  const chips = EDGES.filter(e => e.from === sel).map(e => {
+    const n = taken[sel + "|" + e.out + "|" + e.to];
+    return `<span class="chip${n ? " taken" : ""}${e.limit ? " limit" : ""}" title="${e.limit ? "only after the retry limit" : ""}">${e.out} &rarr; ${e.to}${e.exit ? " (ends the run)" : ""}${n > 1 ? " x" + n : ""}</span>`;
+  }).join("");
+  const res = p.last && p.last.s && p.last.s.result;
+  put("detail", sel ? `<h3>${sel}</h3>
+    <div class="mute">${p.model ? "agent step on " + esc(p.model) : (p.visits ? "program step, no agent" : "has not run in this run")}${p.visits ? " · ran " + p.visits + "x" : ""}${p.cost ? " · $" + fmt(p.cost) : ""}</div>
+    <div class="sub">Where each result leads</div><div class="outs">${chips}</div>
+    ${res ? `<div class="sub">Last result</div><pre>${esc(pretty(res))}</pre>` : ""}` : '<div class="empty">No run yet.</div>');
+
+  $("stepCount").textContent = steps.length ? steps.length + " so far" : "";
+  put("steps", steps.map((e, i) => {
     const s = e.s || {}, a = !!e.s;
     const calls = Object.values(s.tool_calls || {}).reduce((x, y) => x + y, 0);
     const den = s.permission_denials || 0;
-    return `<tr><td>${i + 1}</td><td>${e.state}</td><td>${esc(s.unit || "")}</td><td class="${outCls(e.out)}">${e.out}${s.killed ? " (killed)" : ""}</td><td>${esc(s.model || "")}</td><td>${a ? s.turns : ""}</td><td>${a ? fmt((s.duration_ms || 0) / 60000, 1) : ""}</td><td>${a ? calls : ""}</td><td class="${den ? "no" : ""}">${a ? den : ""}</td><td>${a ? (s.killed ? "?" : "$" + fmt(s.cost_usd)) : ""}</td><td>$${fmt(e.cost_usd)}</td></tr>`;
-  }).join("") + "</tbody>");
+    const w = a && total ? Math.round(100 * (s.cost_usd || 0) / total) : 0;
+    return `<tr><td class="mute">${i + 1}</td><td><b>${e.state}</b></td><td>${esc(s.unit || "")}</td><td><span class="chip ${outCls(e.out) === "ok" ? "good" : outCls(e.out) === "no" ? "bad" : "warn"}">${e.out}${s.killed ? " (killed)" : ""}</span></td><td class="mute">${esc(s.model || "")}</td><td class="r">${a ? s.turns : ""}</td><td class="r">${a ? fmt((s.duration_ms || 0) / 60000, 1) : ""}</td><td class="r">${a ? calls : ""}</td><td class="r ${den ? "no" : ""}">${a ? den : ""}</td><td class="r costcell">${a ? (s.killed ? "?" : "$" + fmt(s.cost_usd)) : ""}<i style="--w:${w}%"></i></td><td class="r">$${fmt(e.cost_usd)}</td></tr>`;
+  }).join("") || `<tr><td colspan="11" class="empty">No steps yet.${CAN_RUN ? " Select issues above and press Run." : " Start a run with: agent-sm &lt;repo-dir&gt; &lt;issue-number&gt;"}</td></tr>`);
 
   const denied = steps.filter(e => e.s && (e.s.denied_sample || []).length);
-  document.getElementById("deniedBox").hidden = !denied.length;
-  put("denied", denied.map(e => `<div style="margin-top:8px"><b>${e.state}</b> <span class="mute">${e.s.permission_denials} denied</span>${e.s.denied_sample.map(d => `<pre>${esc(d)}</pre>`).join("")}</div>`).join(""));
+  $("deniedBox").hidden = !denied.length;
+  put("denied", denied.map(e => `<div class="den"><b>${e.state}</b> <span class="mute">${e.s.permission_denials} denied</span>${e.s.denied_sample.map(d => `<pre>${esc(d)}</pre>`).join("")}</div>`).join(""));
 }
 
 function renderIssues() {
-  const q = document.getElementById("filter").value.toLowerCase();
+  const q = $("filter").value.toLowerCase();
   const rows = ISSUES.filter(i => !q || ("#" + i.number + " " + i.title + " " + i.labels.map(l => l.name).join(" ")).toLowerCase().includes(q));
-  document.querySelector("#issueTable tbody").innerHTML = rows.map(i =>
-    `<tr><td><input type="checkbox" data-n="${i.number}" ${SEL.has(i.number) ? "checked" : ""}></td><td>#${i.number}</td><td>${esc(i.title)}${i.labels.map(l => `<span class="lbl">${esc(l.name)}</span>`).join("")}</td></tr>`).join("")
-    || `<tr><td>no matching open issues</td></tr>`;
-  document.getElementById("runBtn").disabled = SEL.size === 0;
+  const state = {}; // issue -> what the queue says about it
+  (QUEUE.history || []).forEach(j => state[j.issue] = [j.exit || "failed", exitCls(j.exit)]);
+  (QUEUE.queued || []).forEach(j => state[j.issue] = ["queued", "warn"]);
+  if (QUEUE.running) state[QUEUE.running.issue] = ["running", "run"];
+  $("issueCount").textContent = rows.length + (rows.length === ISSUES.length ? "" : " of " + ISSUES.length);
+  put("issueGrid", rows.map(i => {
+    const s = state[i.number], busy = s && (s[0] === "running" || s[0] === "queued");
+    return `<label class="icard${busy ? " busy" : ""}">
+      <input type="checkbox" data-n="${i.number}" ${SEL.has(i.number) ? "checked" : ""} ${busy ? "disabled" : ""}>
+      <span class="i-top"><span class="i-num">#${i.number}</span><span>${i.updatedAt ? age(i.updatedAt) : ""}</span>${s ? `<span class="chip ${s[1]}">${esc(s[0])}</span>` : ""}<span class="check"></span></span>
+      <span class="i-title">${esc(i.title)}</span>
+      <span class="i-labels">${i.labels.map(l => `<span class="lbl"${/^[0-9a-f]{6}$/i.test(l.color || "") ? ` style="--c:#${l.color}"` : ""}>${esc(l.name)}</span>`).join("")}</span>
+    </label>`;
+  }).join("") || `<div class="empty">${ISSUES.length ? "No issue matches the filter." : "No open issues."}</div>`);
+  const n = SEL.size;
+  $("selCount").textContent = n ? n + (n === 1 ? " issue selected" : " issues selected") : "Nothing selected";
+  $("runBtn").disabled = n === 0;
+  $("runBtn").textContent = n > 1 ? "Run " + n + " issues" : "Run";
 }
 async function loadIssues(refresh) {
   const r = await fetch("/api/issues" + (refresh ? "?refresh=1" : ""));
-  if (!r.ok) { document.getElementById("qstate").textContent = "cannot list issues: " + await r.text(); return; }
+  if (!r.ok) { $("msg").textContent = "Cannot list issues: " + await r.text(); return; }
   ISSUES = await r.json(); renderIssues();
 }
 async function post(path, body) {
@@ -233,51 +351,54 @@ async function post(path, body) {
   return r.json();
 }
 function renderQueue(q) {
-  const parts = [];
-  if (q.running) parts.push(`running #${q.running.issue}` + (q.running.err ? " (" + q.running.err + ")" : ""));
-  if (q.queued && q.queued.length) parts.push("queued: " + q.queued.map(j => "#" + j.issue).join(", "));
-  const hist = (q.history || []).slice(-5).map(j => `#${j.issue} ${j.exit || j.err || "?"}`);
-  if (hist.length) parts.push("finished: " + hist.join(", "));
-  document.getElementById("qstate").textContent = parts.join("  |  ") || "idle";
-  BUSY = !!q.running;
+  QUEUE = q; BUSY = !!q.running;
+  const chips = [];
+  if (q.running) chips.push(`<span class="chip run">running #${q.running.issue}</span>`);
+  (q.queued || []).forEach(j => chips.push(`<span class="chip warn">queued #${j.issue}</span>`));
+  (q.history || []).slice(-6).reverse().forEach(j => chips.push(`<span class="chip ${exitCls(j.exit)}" title="${esc(j.err || "")}">#${j.issue} ${esc(j.exit || "failed")}</span>`));
+  put("qstate", chips.length ? '<span class="mute">Queue</span>' + chips.join("") : "");
+  const err = (q.history || []).slice(-1)[0];
+  if (err && err.err) $("msg").textContent = "#" + err.issue + ": " + err.err;
+  $("stopBtn").disabled = !BUSY && !(q.queued || []).length;
+  renderIssues();
 }
 async function pollQueue() {
   const q = await (await fetch("/api/queue")).json();
-  if (q.can_run && !CAN_RUN) { CAN_RUN = true; document.getElementById("issuesPanel").classList.add("on"); loadIssues(false); }
+  if (q.can_run && !CAN_RUN) { CAN_RUN = true; $("issuesPanel").classList.add("on"); loadIssues(false); }
   if (q.can_run) renderQueue(q);
 }
-document.getElementById("filter").addEventListener("input", renderIssues);
-document.getElementById("refresh").addEventListener("click", () => loadIssues(true));
-document.getElementById("issueTable").addEventListener("change", e => {
+$("filter").addEventListener("input", renderIssues);
+$("refresh").addEventListener("click", () => loadIssues(true));
+$("issueGrid").addEventListener("change", e => {
   const n = Number(e.target.dataset.n); if (!n) return;
   e.target.checked ? SEL.add(n) : SEL.delete(n); renderIssues();
 });
-document.getElementById("runBtn").addEventListener("click", async () => {
-  const issues = [...SEL].sort((a, b) => a - b);
-  const publish = document.getElementById("publish").value;
-  const msg = "Run " + issues.map(n => "#" + n).join(", ") + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?";
-  if (!confirm(msg)) return;
-  try { renderQueue(await post("/api/run", { issues, publish, audit: document.getElementById("audit").checked, budget: document.getElementById("budget").value })); SEL.clear(); renderIssues(); tick(); }
-  catch (e) { document.getElementById("qstate").textContent = "cannot start: " + e.message; }
+$("pipe").addEventListener("click", e => {
+  const b = e.target.closest(".node"); if (!b) return;
+  PICKED = b.dataset.s; tick();
 });
-document.getElementById("stopBtn").addEventListener("click", async () => {
+$("runBtn").addEventListener("click", async () => {
+  const issues = [...SEL].sort((a, b) => a - b);
+  const publish = $("publish").value;
+  if (!confirm("Run " + issues.map(n => "#" + n).join(", ") + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?")) return;
+  $("msg").textContent = "";
+  try { SEL.clear(); PICKED = null; renderQueue(await post("/api/run", { issues, publish, audit: $("audit").checked, budget: $("budget").value })); tick(); }
+  catch (e) { $("msg").textContent = "Cannot start: " + e.message; }
+});
+$("stopBtn").addEventListener("click", async () => {
   if (!confirm("Stop the running job and clear the queue?")) return;
-  try { renderQueue(await post("/api/stop")); } catch (e) { document.getElementById("qstate").textContent = "cannot stop: " + e.message; }
+  try { renderQueue(await post("/api/stop")); } catch (e) { $("msg").textContent = "Cannot stop: " + e.message; }
 });
 
 async function tick() {
+  clearTimeout(TIMER);
   try {
     if (!EDGES.length) EDGES = await (await fetch("/api/graph")).json();
     render(await (await fetch("/api/state")).json());
     await pollQueue();
-  } catch (e) { document.getElementById("line").textContent = "cannot reach the server: " + e; }
-  clearTimeout(TIMER);
+  } catch (e) { $("line").textContent = "cannot reach the server: " + e; }
   TIMER = setTimeout(tick, RUNNING || BUSY ? 2000 : 10000); // nothing changes fast when no run is live
 }
-let TIMER;
-document.getElementById("outline").addEventListener("toggle", e => { // toggle does not bubble: capture it
-  const n = e.target.dataset && e.target.dataset.s; if (n) e.target.open ? OPEN.add(n) : OPEN.delete(n);
-}, true);
 tick();
 </script>
 </body>
