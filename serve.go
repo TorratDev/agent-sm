@@ -142,9 +142,11 @@ func serve(issue, addr, repo string) error {
 		issuesMu.Lock()
 		defer issuesMu.Unlock()
 		if r.URL.Query().Get("refresh") != "" || time.Since(issuesAt) > 30*time.Second {
-			out, err := sh(run.repo, "gh", "issue", "list", "--state", "open", "--limit", "100", "--json", "number,title,labels,updatedAt")
+			// The REST list, not `gh issue list`: it carries the sub-issue and blocked-by counts.
+			out, err := sh(run.repo, "gh", "api", "repos/{owner}/{repo}/issues?state=open&per_page=100", "--jq",
+				`[.[] | select(.pull_request | not) | {number, title, updatedAt: .updated_at, labels: [.labels[] | {name, color}], subs: (.sub_issues_summary.total // 0), subsDone: (.sub_issues_summary.completed // 0), blocked: (.issue_dependencies_summary.blocked_by // 0)}]`)
 			if err != nil {
-				http.Error(w, "gh issue list failed: "+tail(out, 300), http.StatusBadGateway)
+				http.Error(w, "listing issues failed: "+tail(out, 300), http.StatusBadGateway)
 				return
 			}
 			issuesJSON, issuesAt = out, time.Now()
@@ -175,15 +177,27 @@ func serve(issue, addr, repo string) error {
 			return
 		}
 		var jobs []Job
+		notes := []string{}
+		seen := map[int]bool{}
 		for _, n := range req.Issues {
 			if n <= 0 {
 				http.Error(w, "bad issue number", http.StatusBadRequest)
 				return
 			}
-			jobs = append(jobs, Job{Issue: n, Publish: req.Publish, Audit: req.Audit, Budget: req.Budget})
+			// An issue with sub-issues is replaced by the sub-issues that can run now.
+			list, why := expand(run.repo, n)
+			notes = append(notes, why...)
+			for _, i := range list {
+				if !seen[i] {
+					seen[i] = true
+					jobs = append(jobs, Job{Issue: i, Publish: req.Publish, Audit: req.Audit, Budget: req.Budget})
+				}
+			}
 		}
 		run.Enqueue(jobs)
-		json.NewEncoder(w).Encode(run.Snapshot())
+		snap := run.Snapshot()
+		snap["notes"] = notes
+		json.NewEncoder(w).Encode(snap)
 	})
 	mux.HandleFunc("/api/stop", func(w http.ResponseWriter, r *http.Request) {
 		if authed(w, r) {

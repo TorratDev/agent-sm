@@ -17,6 +17,12 @@ Exits: `ready`, `gave-up`, `errored`, `split`, `escalated`, `stopped`.
     agent-sm stats [file]                       # per-state cost, models, tools used, denials
     agent-sm allow [file]                       # allow lists suggested by the stats, as SM_ALLOW_FILE JSON
 
+Sub-issues: on the page, an issue with GitHub sub-issues shows its progress. Selecting it queues
+its open sub-issues in its place, one after another; the issue itself never runs. A sub-issue is
+skipped when GitHub lists an open issue as blocking it, when its body's Dependencies section names
+an open issue, or when it has sub-issues of its own (select that one directly). The command line
+still runs exactly the one issue it is given.
+
 The repo's working tree must be clean; the run creates the branch `sm/issue-<n>`. It needs
 `claude`, `git` and `gh` on the PATH.
 

@@ -301,3 +301,28 @@ func TestAgentKillsProcessGroup(t *testing.T) {
 		t.Errorf("CostUnknown = %d, want 1 for a killed session", c.CostUnknown)
 	}
 }
+
+func TestPickSubIssues(t *testing.T) {
+	open := func(n int) bool { return n == 7 }
+	if run, notes := pickSubIssues(5, nil, open); len(run) != 1 || run[0] != 5 || notes != nil {
+		t.Errorf("an issue without sub-issues runs itself: %v %v", run, notes)
+	}
+	subs := []subIssue{
+		{Number: 10, State: "open"},
+		{Number: 11, State: "closed"},
+		{Number: 12, State: "open", Blocked: 1},
+		{Number: 13, State: "open", Body: "## Dependencies\n- #7"},
+		{Number: 14, State: "open", Body: "## Dependencies\n- #8"}, // #8 is closed: free to run
+		{Number: 15, State: "open", Subs: 2},
+	}
+	run, notes := pickSubIssues(5, subs, open)
+	if len(run) != 2 || run[0] != 10 || run[1] != 14 {
+		t.Errorf("run = %v, want [10 14] (the parent and dependent sub-issues never run)", run)
+	}
+	if got := strings.Join(notes, "|"); !strings.Contains(got, "#12 skipped: blocked") || !strings.Contains(got, "#13 skipped: depends on #7") || !strings.Contains(got, "#15 skipped: has its own") {
+		t.Errorf("notes = %q", got)
+	}
+	if run, notes := pickSubIssues(5, subs[2:3], open); len(run) != 0 || !strings.Contains(strings.Join(notes, "|"), "no sub-issue can run now") {
+		t.Errorf("all blocked: %v %v", run, notes)
+	}
+}
