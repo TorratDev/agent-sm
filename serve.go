@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -203,6 +205,11 @@ func serve(issue, addr, repo string) error {
 				}
 			}
 		}
+		// A selected parent runs its sub-issues, which the page cannot check for old work: ask it to confirm.
+		if old := oldWork(jobs, run.leftovers()); old != "" && !req.Discard {
+			http.Error(w, old+" still has a worktree from an earlier run. It and its branch sm/issue-<n> will be deleted, with any staged changes in it. This cannot be undone.", http.StatusConflict)
+			return
+		}
 		run.Enqueue(jobs)
 		snap := run.Snapshot()
 		snap["notes"] = notes
@@ -241,4 +248,15 @@ func serve(issue, addr, repo string) error {
 	}
 	fmt.Fprintf(os.Stderr, "agent-sm: http://%s  (showing %s; %s; stats %s)\n", addr, what, mode, statsPath)
 	return http.ListenAndServe(addr, http.HandlerFunc(guard))
+}
+
+// oldWork names the jobs whose issue still has a worktree from an earlier run, as "#1, #2".
+func oldWork(jobs []Job, leftover []int) string {
+	var old []string
+	for _, j := range jobs {
+		if slices.Contains(leftover, j.Issue) {
+			old = append(old, "#"+strconv.Itoa(j.Issue))
+		}
+	}
+	return strings.Join(old, ", ")
 }

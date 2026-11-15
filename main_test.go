@@ -390,3 +390,13 @@ func TestModelDefaultsAndChoice(t *testing.T) {
 		t.Errorf("the page's model must win over the server's environment, got %q", last)
 	}
 }
+
+func TestOldWork(t *testing.T) {
+	jobs := []Job{{Issue: 1}, {Issue: 424}, {Issue: 7}}
+	if got := oldWork(jobs, []int{7, 424, 99}); got != "#424, #7" {
+		t.Fatalf("got %q", got)
+	}
+	if got := oldWork(jobs, nil); got != "" {
+		t.Fatalf("got %q", got)
+	}
+}
