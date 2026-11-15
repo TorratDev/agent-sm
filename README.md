@@ -23,6 +23,11 @@ skipped when GitHub lists an open issue as blocking it, when its body's Dependen
 an open issue, or when it has sub-issues of its own (select that one directly). The command line
 still runs exactly the one issue it is given.
 
+Re-running an issue: a run that does not merge leaves its worktree and its `sm/issue-<n>` branch,
+because for a local-only run the staged changes there are the result. The page marks such an
+issue "old work"; selecting it turns Run into "Discard old work and run", which deletes that
+worktree and local branch first. A branch on origin or an existing PR is never deleted.
+
 The repo's working tree must be clean; the run creates the branch `sm/issue-<n>`. It needs
 `claude`, `git` and `gh` on the PATH.
 
@@ -38,7 +43,7 @@ in place; delete it before running the issue again.
 | `SM_BUDGET` | `2.00` | Dollar limit for one agent session. |
 | `SM_RUN_BUDGET` | `20` | Dollar limit for the whole run; no step starts once it is reached. `0` turns it off. |
 | `SM_TIMEOUT` | `60` | Minutes before an agent session and its child processes are killed. |
-| `SM_MODEL_<STATE>` | CLI default | Model for one state, e.g. `SM_MODEL_PLAN=haiku`, `SM_MODEL_REVIEW=opus`. |
+| `SM_MODEL_<STATE>` | sonnet 5.5; opus 5.5 for review | Model for one state, e.g. `SM_MODEL_PLAN=claude-haiku-5-5`. The page has a picker per step, which wins for runs started there. |
 | `SM_CHECKS` | cargo fmt check, clippy, test | Check commands, one per line. |
 | `SM_FMT` | `cargo fmt --all` | Formatter run before the checks. Not run when `SM_CHECKS` is set and this is not. |
 | `SM_ALLOW_FILE` | none | JSON `{"state": "tools"}` that replaces a state's default allow list. |

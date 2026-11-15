@@ -15,14 +15,16 @@ import (
 
 // Job is one issue to process, started from the web page.
 type Job struct {
-	Issue    int    `json:"issue"`
-	Publish  string `json:"publish"` // "" (local only) or "pr"; merge is CLI-only
-	Audit    bool   `json:"audit"`
-	Budget   string `json:"budget"`
-	Started  string `json:"started,omitempty"`
-	Worktree string `json:"worktree,omitempty"`
-	Exit     string `json:"exit,omitempty"`
-	Err      string `json:"err,omitempty"`
+	Issue    int               `json:"issue"`
+	Publish  string            `json:"publish"` // "" (local only) or "pr"; merge is CLI-only
+	Audit    bool              `json:"audit"`
+	Budget   string            `json:"budget"`
+	Discard  bool              `json:"discard"`          // remove an earlier run's worktree and branch first
+	Models   map[string]string `json:"models,omitempty"` // state -> model chosen on the page
+	Started  string            `json:"started,omitempty"`
+	Worktree string            `json:"worktree,omitempty"`
+	Exit     string            `json:"exit,omitempty"`
+	Err      string            `json:"err,omitempty"`
 }
 
 // Runner runs queued jobs one at a time, each as `agent-sm <worktree> <issue>` in its own
@@ -37,7 +39,21 @@ type Runner struct {
 	working, stopping bool
 }
 
-var budgetRe = regexp.MustCompile(`^\d+(\.\d+)?$`)
+var (
+	budgetRe = regexp.MustCompile(`^\d+(\.\d+)?$`)
+	modelRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9.\-]{0,63}$`)
+)
+
+// agentModels is each agent state's current default model, for the page's pickers.
+func agentModels() map[string]string {
+	m := map[string]string{}
+	for _, st := range steps {
+		if st.Role != "" {
+			m[st.Name] = stepModel(st)
+		}
+	}
+	return m
+}
 
 func (r *Runner) Enqueue(jobs []Job) {
 	r.mu.Lock()
@@ -77,11 +93,37 @@ func (r *Runner) loop() {
 
 func (r *Runner) set(f func()) { r.mu.Lock(); f(); r.mu.Unlock() }
 
-// worktree makes a fresh detached worktree of the base branch for the issue.
-func (r *Runner) worktree(n int) (string, error) {
-	dir := filepath.Join(filepath.Dir(r.repo), filepath.Base(r.repo)+"-worktrees", fmt.Sprintf("%d-sm", n))
+func (r *Runner) worktreeRoot() string {
+	return filepath.Join(filepath.Dir(r.repo), filepath.Base(r.repo)+"-worktrees")
+}
+
+// leftovers lists the issues whose worktree from an earlier run is still there.
+func (r *Runner) leftovers() []int {
+	out := []int{}
+	dirs, _ := filepath.Glob(filepath.Join(r.worktreeRoot(), "*-sm"))
+	for _, d := range dirs {
+		if n, err := strconv.Atoi(strings.TrimSuffix(filepath.Base(d), "-sm")); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// worktree makes a fresh detached worktree of the base branch for the issue. An earlier run's
+// worktree holds that run's result (its staged changes), so it is only removed, with its local
+// branch, when discard says so.
+func (r *Runner) worktree(n int, discard bool) (string, error) {
+	dir := filepath.Join(r.worktreeRoot(), fmt.Sprintf("%d-sm", n))
 	if _, err := os.Stat(dir); err == nil {
-		return "", fmt.Errorf("worktree %s already exists: remove it with git worktree remove, or run it from the CLI", dir)
+		if !discard {
+			return "", fmt.Errorf("worktree %s already exists from an earlier run: select the issue again and use \"Discard old work and run\"", dir)
+		}
+		if out, err := sh(r.repo, "git", "worktree", "remove", "--force", dir); err != nil {
+			return "", fmt.Errorf("cannot discard %s: %s", dir, tail(out, 300))
+		}
+	}
+	if discard {
+		sh(r.repo, "git", "branch", "-D", "sm/issue-"+strconv.Itoa(n)) // absent is fine
 	}
 	base := baseBranch()
 	sh(r.repo, "git", "fetch", "origin", strings.TrimPrefix(base, "origin/"))
@@ -114,11 +156,14 @@ func childEnv(j *Job, stats string) []string {
 	if j.Budget != "" {
 		env = append(env, "SM_BUDGET="+j.Budget)
 	}
+	for state, m := range j.Models { // appended last, so the page's choice wins over the server's environment
+		env = append(env, "SM_MODEL_"+strings.ToUpper(state)+"="+m)
+	}
 	return env
 }
 
 func (r *Runner) runOne(j *Job) {
-	wt, err := r.worktree(j.Issue)
+	wt, err := r.worktree(j.Issue, j.Discard)
 	if err != nil {
 		r.set(func() { j.Err = err.Error() })
 		return
@@ -171,5 +216,5 @@ func (r *Runner) Snapshot() map[string]any {
 		c := *r.cur
 		cur = &c
 	}
-	return map[string]any{"can_run": true, "repo": r.repo, "running": cur, "queued": append([]Job{}, r.queue...), "history": append([]Job{}, r.history...)}
+	return map[string]any{"can_run": true, "repo": r.repo, "leftover": r.leftovers(), "models": agentModels(), "running": cur, "queued": append([]Job{}, r.queue...), "history": append([]Job{}, r.history...)}
 }

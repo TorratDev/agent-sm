@@ -326,3 +326,67 @@ func TestPickSubIssues(t *testing.T) {
 		t.Errorf("all blocked: %v %v", run, notes)
 	}
 }
+
+// A leftover worktree is kept unless the job says to discard it; discard also drops the branch.
+func TestWorktreeDiscard(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	os.MkdirAll(repo, 0o755)
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"}} {
+		if out, err := sh(repo, "git", args...); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	t.Setenv("SM_BASE", "main")
+	r := &Runner{repo: repo}
+	dir, err := r.worktree(5, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sh(dir, "git", "checkout", "-q", "-b", "sm/issue-5")
+	os.WriteFile(filepath.Join(dir, "work.txt"), []byte("staged result"), 0o644)
+	sh(dir, "git", "add", "-A")
+	if l := r.leftovers(); len(l) != 1 || l[0] != 5 {
+		t.Errorf("leftovers = %v, want [5]", l)
+	}
+	if _, err := r.worktree(5, false); err == nil {
+		t.Fatal("an existing worktree must not be reused or removed without discard")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "work.txt")); err != nil {
+		t.Fatal("the refused run must leave the old work in place")
+	}
+	if _, err := r.worktree(5, true); err != nil {
+		t.Fatalf("discard: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "work.txt")); err == nil {
+		t.Error("discard must give a fresh worktree")
+	}
+	if _, err := sh(repo, "git", "rev-parse", "--verify", "-q", "refs/heads/sm/issue-5"); err == nil {
+		t.Error("discard must delete the old branch")
+	}
+}
+
+// No agent step may fall back to the CLI's default model, and the page's choice reaches the run.
+func TestModelDefaultsAndChoice(t *testing.T) {
+	for _, st := range steps {
+		if st.Role != "" && st.Model == "" {
+			t.Errorf("%s has no default model", st.Name)
+		}
+	}
+	if m := agentModels(); m["review"] != opus || m["execute"] != sonnet || len(m) != 4 {
+		t.Errorf("agentModels = %v", m)
+	}
+	t.Setenv("SM_MODEL_PLAN", "claude-haiku-5-5")
+	if m := agentModels()["plan"]; m != "claude-haiku-5-5" {
+		t.Errorf("SM_MODEL_PLAN not honoured: %q", m)
+	}
+	env := childEnv(&Job{Issue: 1, Models: map[string]string{"plan": "claude-opus-5-5"}}, "s")
+	last := ""
+	for _, e := range env {
+		if strings.HasPrefix(e, "SM_MODEL_PLAN=") {
+			last = e
+		}
+	}
+	if last != "SM_MODEL_PLAN=claude-opus-5-5" {
+		t.Errorf("the page's model must win over the server's environment, got %q", last)
+	}
+}

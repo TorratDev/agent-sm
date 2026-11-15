@@ -166,15 +166,24 @@ func serve(issue, addr, repo string) error {
 			return
 		}
 		var req struct {
-			Issues  []int  `json:"issues"`
-			Publish string `json:"publish"`
-			Audit   bool   `json:"audit"`
-			Budget  string `json:"budget"`
+			Issues  []int             `json:"issues"`
+			Publish string            `json:"publish"`
+			Audit   bool              `json:"audit"`
+			Budget  string            `json:"budget"`
+			Discard bool              `json:"discard"`
+			Models  map[string]string `json:"models"`
 		}
 		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req) != nil || len(req.Issues) == 0 || len(req.Issues) > 20 ||
 			(req.Publish != "" && req.Publish != levelPR) || (req.Budget != "" && !budgetRe.MatchString(req.Budget)) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
+		}
+		defaults := agentModels()
+		for state, m := range req.Models {
+			if _, ok := defaults[state]; !ok || !modelRe.MatchString(m) {
+				http.Error(w, "bad model for "+state, http.StatusBadRequest)
+				return
+			}
 		}
 		var jobs []Job
 		notes := []string{}
@@ -190,7 +199,7 @@ func serve(issue, addr, repo string) error {
 			for _, i := range list {
 				if !seen[i] {
 					seen[i] = true
-					jobs = append(jobs, Job{Issue: i, Publish: req.Publish, Audit: req.Audit, Budget: req.Budget})
+					jobs = append(jobs, Job{Issue: i, Publish: req.Publish, Audit: req.Audit, Budget: req.Budget, Discard: req.Discard, Models: req.Models})
 				}
 			}
 		}

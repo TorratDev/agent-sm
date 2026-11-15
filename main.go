@@ -96,7 +96,7 @@ type Step struct {
 	Role   string // prompts/<Role>.md
 	Schema string // JSON schema of the result; must match the struct the step decodes into
 	Allow  string // default tools; SM_ALLOW_FILE replaces it, SM_EXTRA_ALLOW adds to it
-	Model  string // "" is the CLI's default; SM_MODEL_<STATE> (e.g. SM_MODEL_PLAN=haiku) overrides
+	Model  string // default model; SM_MODEL_<STATE> (e.g. SM_MODEL_PLAN=haiku) or the page's choice overrides
 	Edit   bool   // the step may edit files
 }
 
@@ -106,27 +106,43 @@ const shRead = "Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(ls:*),Bash(cat:*),Ba
 // The py-desmume interpreter the prompts name for runtime probes, and what a probe run needs.
 const shProbe = "Bash(~/venvs/desmume/bin/python:*),Bash(python3:*),Bash(export:*),Bash(mkdir:*),Bash(sha1sum:*)"
 
+// Default models, as the rust-mm orchestrator assigned them (prompts/original/orchestrator.md):
+// sonnet for the working roles, opus for the reviewer. Never the CLI's own default, which
+// follows the user's account and can be the most expensive model.
+const (
+	sonnet = "claude-sonnet-5-5"
+	opus   = "claude-opus-5-5"
+)
+
+// stepModel is the model a step runs on: SM_MODEL_<STATE> if set, else the step's default.
+func stepModel(st Step) string {
+	if v := os.Getenv("SM_MODEL_" + strings.ToUpper(st.Name)); v != "" {
+		return v
+	}
+	return st.Model
+}
+
 var steps [numStates]Step
 
 func init() { // not a composite literal at package level: the step functions refer back to steps
 	steps = [numStates]Step{
 		Prepare: {Name: "prepare", Run: prepare, Outs: []Out{Ok, Fail}},
 		Plan: {Name: "plan", Run: plan, Outs: []Out{Ok, Direct, Blocked, Split, Invalid, Timeout, OverBudget},
-			Role:   "planner",
+			Role: "planner", Model: sonnet,
 			Schema: `{"type":"object","properties":{"status":{"enum":["plan","blocked"]},"objective":{"type":"string"},"points":{"type":"array","items":{"type":"string"}},"points_derived":{"type":"boolean"},"files":{"type":"array","items":{"type":"string"}},"verification":{"type":"string"},"needs_investigation":{"type":"boolean"},"fits_one_pr":{"type":"boolean"},"units":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"points":{"type":"array","items":{"type":"string"}}},"required":["id","title","points"],"additionalProperties":false}}},"required":["status","objective","points","points_derived","files","verification","needs_investigation","fits_one_pr","units"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead + ",Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*)"},
 		Investigate: {Name: "investigate", Run: investigate, Outs: []Out{Ok, More, Blocked, Split, Invalid, Timeout, OverBudget},
-			Role:   "investigator",
+			Role: "investigator", Model: sonnet,
 			Schema: `{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"},"fits_one_pr":{"type":"boolean"}},"required":["status","evidence","handoff","fits_one_pr"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead + "," + shProbe + ",Bash(ghidra:*),Bash(git log:*),Bash(git grep:*),Bash(git status:*),Bash(gh issue view:*),Bash(cp:*),Bash(sleep:*)"},
 		Execute: {Name: "execute", Run: execute, Outs: []Out{Ok, Blocked, Invalid, Timeout, OverBudget},
-			Role:   "executor",
+			Role: "executor", Model: sonnet,
 			Schema: `{"type":"object","properties":{"status":{"enum":["done","partial","blocked"]},"summary":{"type":"string"},"closes_issue":{"type":"boolean"}},"required":["status","summary","closes_issue"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob,Edit,Write," + shRead + "," + shProbe + ",Bash(cargo:*),Bash(scripts/check-deps.sh:*),Bash(./scripts/check-deps.sh:*),Bash(git diff:*),Bash(git status:*)",
 			Edit:   true},
 		Check: {Name: "check", Run: check, Outs: []Out{Pass, Fail}},
 		Review: {Name: "review", Run: review, Outs: []Out{Pass, Fail, Split, Escalate, Invalid, Timeout, OverBudget},
-			Role:   "reviewer",
+			Role: "reviewer", Model: opus,
 			Schema: `{"type":"object","properties":{"verdict":{"enum":["PASS","REVISE","SPLIT","ESCALATE"]},"reasons":{"type":"array","items":{"type":"string"}}},"required":["verdict","reasons"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead + "," + shProbe + ",Bash(git diff:*),Bash(git log:*),Bash(ghidra:*)"},
 		Publish: {Name: "publish", Run: publish, Outs: []Out{Ok, Fail}},
@@ -376,11 +392,7 @@ func agent(c *Ctx, state State, prompt string, out any) (res Out) {
 	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose", "--json-schema", step.Schema,
 		"--no-session-persistence", "--allowedTools", allow, "--max-budget-usd", strconv.FormatFloat(budget, 'f', 4, 64),
 		"--append-system-prompt", rolePrompt(state)}
-	model := step.Model
-	if v := os.Getenv("SM_MODEL_" + strings.ToUpper(step.Name)); v != "" {
-		model = v
-	}
-	if model != "" {
+	if model := stepModel(step); model != "" {
 		args = append(args, "--model", model)
 	}
 	// SM_AUDIT=1: every built-in tool is listed and permissions are bypassed, so `agent-sm stats`

@@ -177,6 +177,7 @@
       <button class="btn danger" id="stopBtn" disabled>Stop</button>
       <button class="btn primary" id="runBtn" disabled>Run</button>
     </div>
+    <div class="panel runbar" id="modelBar"><b>Models</b><span class="mute" style="font-size:12px">per step, for the runs you start next</span><span class="grow"></span><span id="models" style="display:contents"></span></div>
     <div class="queue" id="qstate"></div>
     <div id="msg" role="alert"></div>
   </section>
@@ -208,7 +209,7 @@
 </main>
 <script>
 const TOKEN = "__TOKEN__";
-let EDGES = [], ISSUES = [], QUEUE = {}, SEL = new Set(), CAN_RUN = false, BUSY = false, RUNNING = false, PICKED = null, TIMER;
+let OLD = [], QERR = "", EDGES = [], ISSUES = [], QUEUE = {}, SEL = new Set(), CAN_RUN = false, BUSY = false, RUNNING = false, PICKED = null, TIMER;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 // put sets an element's HTML only when it changed, so scroll positions and focus survive a poll.
@@ -330,12 +331,13 @@ function renderIssues() {
   (QUEUE.history || []).forEach(j => state[j.issue] = [j.exit || "failed", exitCls(j.exit)]);
   (QUEUE.queued || []).forEach(j => state[j.issue] = ["queued", "warn"]);
   if (QUEUE.running) state[QUEUE.running.issue] = ["running", "run"];
+  const left = new Set((QUEUE.leftover || []).filter(n => !(QUEUE.running && QUEUE.running.issue === n)));
   $("issueCount").textContent = rows.length + (rows.length === ISSUES.length ? "" : " of " + ISSUES.length);
   put("issueGrid", rows.map(i => {
     const s = state[i.number], busy = s && (s[0] === "running" || s[0] === "queued");
     return `<label class="icard${busy ? " busy" : ""}">
       <input type="checkbox" data-n="${i.number}" ${SEL.has(i.number) ? "checked" : ""} ${busy ? "disabled" : ""}>
-      <span class="i-top"><span class="i-num">#${i.number}</span><span>${i.updatedAt ? age(i.updatedAt) : ""}</span>${s ? `<span class="chip ${s[1]}">${esc(s[0])}</span>` : ""}${i.blocked ? `<span class="chip warn" title="GitHub lists ${i.blocked} open issue(s) as blocking this one">blocked</span>` : ""}<span class="check"></span></span>
+      <span class="i-top"><span class="i-num">#${i.number}</span><span>${i.updatedAt ? age(i.updatedAt) : ""}</span>${s ? `<span class="chip ${s[1]}">${esc(s[0])}</span>` : ""}${left.has(i.number) && !busy ? `<span class="chip warn" title="A worktree from an earlier run still holds its staged changes. Running this issue again discards them.">old work</span>` : ""}${i.blocked ? `<span class="chip warn" title="GitHub lists ${i.blocked} open issue(s) as blocking this one">blocked</span>` : ""}<span class="check"></span></span>
       <span class="i-title">${esc(i.title)}</span>
       ${i.subs ? `<span class="i-subs" title="Selecting this issue runs its open sub-issues, not the issue itself"><span class="bar"><i style="width:${Math.round(100 * i.subsDone / i.subs)}%"></i></span>${i.subsDone} of ${i.subs} sub-issues done</span>` : ""}
       <span class="i-labels">${i.labels.map(l => `<span class="lbl"${/^[0-9a-f]{6}$/i.test(l.color || "") ? ` style="--c:#${l.color}"` : ""}>${esc(l.name)}</span>`).join("")}</span>
@@ -344,7 +346,8 @@ function renderIssues() {
   const n = SEL.size;
   $("selCount").textContent = n ? n + (n === 1 ? " issue selected" : " issues selected") : "Nothing selected";
   $("runBtn").disabled = n === 0;
-  $("runBtn").textContent = n > 1 ? "Run " + n + " issues" : "Run";
+  OLD = [...SEL].filter(x => left.has(x)).sort((a, b) => a - b);
+  $("runBtn").textContent = OLD.length ? "Discard old work and run" : (n > 1 ? "Run " + n + " issues" : "Run");
 }
 async function loadIssues(refresh) {
   const r = await fetch("/api/issues" + (refresh ? "?refresh=1" : ""));
@@ -356,15 +359,32 @@ async function post(path, body) {
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
+// One picker per agent step. The server's default is preselected; a choice is remembered in this browser.
+const MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"];
+function saved() { try { return JSON.parse(localStorage.getItem("sm-models")) || {}; } catch { return {}; } }
+function renderModels(defaults) {
+  if ($("models").children.length || !defaults) return; // built once: rebuilding would reset an open picker
+  const mine = saved();
+  $("models").innerHTML = Object.keys(defaults).map(state => {
+    const cur = mine[state] || defaults[state];
+    const opts = [...new Set([...MODELS, defaults[state], cur])].filter(Boolean);
+    return `<label>${state} <select class="field" data-state="${state}">${opts.map(m => `<option value="${esc(m)}"${m === cur ? " selected" : ""}>${esc(m.replace(/^claude-/, ""))}${m === defaults[state] ? " (default)" : ""}</option>`).join("")}</select></label>`;
+  }).join("");
+}
+const chosenModels = () => Object.fromEntries([...document.querySelectorAll("#models select")].map(s => [s.dataset.state, s.value]));
+$("models").addEventListener("change", () => { try { localStorage.setItem("sm-models", JSON.stringify(chosenModels())); } catch {} });
+
 function renderQueue(q) {
-  QUEUE = q; BUSY = !!q.running;
+  QUEUE = q; BUSY = !!q.running; renderModels(q.models);
   const chips = [];
   if (q.running) chips.push(`<span class="chip run">running #${q.running.issue}</span>`);
   (q.queued || []).forEach(j => chips.push(`<span class="chip warn">queued #${j.issue}</span>`));
   (q.history || []).slice(-6).reverse().forEach(j => chips.push(`<span class="chip ${exitCls(j.exit)}" title="${esc(j.err || "")}">#${j.issue} ${esc(j.exit || "failed")}</span>`));
   put("qstate", chips.length ? '<span class="mute">Queue</span>' + chips.join("") : "");
-  const err = (q.history || []).slice(-1)[0];
-  if (err && err.err) $("msg").textContent = "#" + err.issue + ": " + err.err;
+  // The last finished job's failure, until the same issue is running again.
+  const last = (q.history || []).slice(-1)[0];
+  if (last && last.err && !(q.running && q.running.issue === last.issue)) $("msg").textContent = QERR = "#" + last.issue + ": " + last.err;
+  else if ($("msg").textContent === QERR) $("msg").textContent = "";
   $("stopBtn").disabled = !BUSY && !(q.queued || []).length;
   renderIssues();
 }
@@ -388,11 +408,12 @@ $("runBtn").addEventListener("click", async () => {
   const publish = $("publish").value;
   const parents = issues.filter(n => (ISSUES.find(i => i.number === n) || {}).subs);
   if (!confirm("Run " + issues.map(n => "#" + n).join(", ") + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?"
+    + (OLD.length ? "\n\n" + OLD.map(n => "#" + n).join(", ") + " still has a worktree from an earlier run. It and its branch sm/issue-<n> will be deleted, with any staged changes in it. This cannot be undone." : "")
     + (parents.length ? "\n\n" + parents.map(n => "#" + n).join(", ") + " has sub-issues: its open sub-issues run in its place, one after another. Sub-issues that depend on an open issue are skipped." : ""))) return;
   $("msg").textContent = "";
   try {
     SEL.clear(); PICKED = null;
-    const q = await post("/api/run", { issues, publish, audit: $("audit").checked, budget: $("budget").value });
+    const q = await post("/api/run", { issues, publish, audit: $("audit").checked, budget: $("budget").value, discard: OLD.length > 0, models: chosenModels() });
     renderQueue(q); $("msg").textContent = (q.notes || []).join(" · "); tick();
   }
   catch (e) { $("msg").textContent = "Cannot start: " + e.message; }
