@@ -83,10 +83,7 @@ func (r *Runner) worktree(n int) (string, error) {
 	if _, err := os.Stat(dir); err == nil {
 		return "", fmt.Errorf("worktree %s already exists: remove it with git worktree remove, or run it from the CLI", dir)
 	}
-	base := os.Getenv("SM_BASE")
-	if base == "" {
-		base = "origin/main"
-	}
+	base := baseBranch()
 	sh(r.repo, "git", "fetch", "origin", strings.TrimPrefix(base, "origin/"))
 	if out, err := sh(r.repo, "git", "worktree", "add", "--detach", dir, base); err != nil {
 		return "", fmt.Errorf("git worktree add: %s", tail(out, 300))

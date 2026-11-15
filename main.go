@@ -13,21 +13,21 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
-//go:embed prompts/rtk.md prompts/investigator.md prompts/executor.md prompts/reviewer.md prompts/planner.md
+//go:embed prompts/*.md
 var promptFS embed.FS
-
-var roleFile = map[State]string{Plan: "planner", Investigate: "investigator", Execute: "executor", Review: "reviewer"}
 
 // rolePrompt is the RTK rule followed by the step's role prompt (prompts/*.md).
 func rolePrompt(s State) string {
 	rtk, _ := promptFS.ReadFile("prompts/rtk.md")
-	role, _ := promptFS.ReadFile("prompts/" + roleFile[s] + ".md")
+	role, _ := promptFS.ReadFile("prompts/" + steps[s].Role + ".md")
 	return string(rtk) + "\n\n" + string(role)
 }
 
@@ -51,9 +51,7 @@ const (
 	numStates
 )
 
-var stateNames = [numStates]string{"prepare", "plan", "investigate", "execute", "check", "review", "publish"}
-
-func (s State) String() string { return stateNames[s] }
+func (s State) String() string { return steps[s].Name }
 
 type Out int
 
@@ -62,15 +60,17 @@ const (
 	Blocked
 	Pass
 	Fail
-	Direct   // planner: no investigation needed, go straight to execute
-	More     // investigate: this unit is done, another unit remains
-	Split    // too large for one PR: follow-up needed
-	Escalate // a human must decide
-	Invalid  // agent output missing or off-schema
+	Direct     // planner: no investigation needed, go straight to execute
+	More       // investigate: this unit is done, another unit remains
+	Split      // too large for one PR: follow-up needed
+	Escalate   // a human must decide
+	Invalid    // agent output missing or off-schema
+	Timeout    // agent session killed at SM_TIMEOUT
+	OverBudget // agent session stopped by its budget (SM_BUDGET, or what is left of SM_RUN_BUDGET)
 	numOuts
 )
 
-var outNames = [numOuts]string{"ok", "blocked", "pass", "fail", "direct", "more", "split", "escalate", "invalid"}
+var outNames = [numOuts]string{"ok", "blocked", "pass", "fail", "direct", "more", "split", "escalate", "invalid", "timeout", "over-budget"}
 
 func (o Out) String() string { return outNames[o] }
 
@@ -79,21 +79,58 @@ type Exit string
 
 const (
 	Ready     Exit = "ready"     // branch is local, checks pass, reviewer said PASS
-	GaveUp    Exit = "gave-up"   // blocked, or too many fix rounds
+	GaveUp    Exit = "gave-up"   // blocked, too many fix rounds, a timed-out session, or the budget is spent
 	Errored   Exit = "errored"   // setup failed or agent output stayed invalid
 	SplitExit Exit = "split"     // needs a follow-up issue
 	Escalated Exit = "escalated" // a human must decide
+	Stopped   Exit = "stopped"   // SIGINT or SIGTERM
 )
 
-// What each step may return. step results outside this set panic; next() is tested against it.
-var outs = map[State][]Out{
-	Prepare:     {Ok, Fail},
-	Plan:        {Ok, Direct, Blocked, Split, Invalid},
-	Investigate: {Ok, More, Blocked, Split, Invalid},
-	Execute:     {Ok, Blocked, Invalid},
-	Check:       {Pass, Fail},
-	Review:      {Pass, Fail, Split, Escalate, Invalid},
-	Publish:     {Ok, Fail},
+// Step declares one state in one place: what runs, what it may return and, for an agent step,
+// its role prompt, output schema, tool allow list and model.
+type Step struct {
+	Name string
+	Run  func(*Ctx) Out
+	Outs []Out // results outside this set panic; next() is tested against it
+	// Agent steps only (Role != ""):
+	Role   string // prompts/<Role>.md
+	Schema string // JSON schema of the result; must match the struct the step decodes into
+	Allow  string // default tools; SM_ALLOW_FILE replaces it, SM_EXTRA_ALLOW adds to it
+	Model  string // "" is the CLI's default; SM_MODEL_<STATE> (e.g. SM_MODEL_PLAN=haiku) overrides
+	Edit   bool   // the step may edit files
+}
+
+// Read-only shell commands every agent step may run, so a batched call is not denied for an `ls`.
+const shRead = "Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(ls:*),Bash(cat:*),Bash(wc:*),Bash(sed:*),Bash(awk:*),Bash(cut:*),Bash(sort:*),Bash(echo:*),Bash(cd:*),Bash(test:*)"
+
+// The py-desmume interpreter the prompts name for runtime probes, and what a probe run needs.
+const shProbe = "Bash(~/venvs/desmume/bin/python:*),Bash(python3:*),Bash(export:*),Bash(mkdir:*),Bash(sha1sum:*)"
+
+var steps [numStates]Step
+
+func init() { // not a composite literal at package level: the step functions refer back to steps
+	steps = [numStates]Step{
+		Prepare: {Name: "prepare", Run: prepare, Outs: []Out{Ok, Fail}},
+		Plan: {Name: "plan", Run: plan, Outs: []Out{Ok, Direct, Blocked, Split, Invalid, Timeout, OverBudget},
+			Role:   "planner",
+			Schema: `{"type":"object","properties":{"status":{"enum":["plan","blocked"]},"objective":{"type":"string"},"points":{"type":"array","items":{"type":"string"}},"points_derived":{"type":"boolean"},"files":{"type":"array","items":{"type":"string"}},"verification":{"type":"string"},"needs_investigation":{"type":"boolean"},"fits_one_pr":{"type":"boolean"},"units":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"points":{"type":"array","items":{"type":"string"}}},"required":["id","title","points"],"additionalProperties":false}}},"required":["status","objective","points","points_derived","files","verification","needs_investigation","fits_one_pr","units"],"additionalProperties":false}`,
+			Allow:  "Read,Grep,Glob," + shRead + ",Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*)"},
+		Investigate: {Name: "investigate", Run: investigate, Outs: []Out{Ok, More, Blocked, Split, Invalid, Timeout, OverBudget},
+			Role:   "investigator",
+			Schema: `{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"},"fits_one_pr":{"type":"boolean"}},"required":["status","evidence","handoff","fits_one_pr"],"additionalProperties":false}`,
+			Allow:  "Read,Grep,Glob," + shRead + "," + shProbe + ",Bash(ghidra:*),Bash(git log:*),Bash(git grep:*),Bash(git status:*),Bash(gh issue view:*),Bash(cp:*),Bash(sleep:*)"},
+		Execute: {Name: "execute", Run: execute, Outs: []Out{Ok, Blocked, Invalid, Timeout, OverBudget},
+			Role:   "executor",
+			Schema: `{"type":"object","properties":{"status":{"enum":["done","partial","blocked"]},"summary":{"type":"string"},"closes_issue":{"type":"boolean"}},"required":["status","summary","closes_issue"],"additionalProperties":false}`,
+			Allow:  "Read,Grep,Glob,Edit,Write," + shRead + "," + shProbe + ",Bash(cargo:*),Bash(scripts/check-deps.sh:*),Bash(./scripts/check-deps.sh:*),Bash(git diff:*),Bash(git status:*)",
+			Edit:   true},
+		Check: {Name: "check", Run: check, Outs: []Out{Pass, Fail}},
+		Review: {Name: "review", Run: review, Outs: []Out{Pass, Fail, Split, Escalate, Invalid, Timeout, OverBudget},
+			Role:   "reviewer",
+			Schema: `{"type":"object","properties":{"verdict":{"enum":["PASS","REVISE","SPLIT","ESCALATE"]},"reasons":{"type":"array","items":{"type":"string"}}},"required":["verdict","reasons"],"additionalProperties":false}`,
+			Allow:  "Read,Grep,Glob," + shRead + "," + shProbe + ",Bash(git diff:*),Bash(git log:*),Bash(ghidra:*)"},
+		Publish: {Name: "publish", Run: publish, Outs: []Out{Ok, Fail}},
+	}
 }
 
 const (
@@ -122,6 +159,9 @@ func next(s State, o Out, visits [numStates]int) Next {
 			return goTo(s)
 		}
 		return done(Errored)
+	}
+	if o == Timeout || o == OverBudget { // never rerun: the same session would spend the same again
+		return done(GaveUp)
 	}
 	switch s {
 	case Prepare:
@@ -216,10 +256,17 @@ type Ctx struct {
 	UnitIdx       int
 	Handoff       string // notes earlier units leave for later ones
 	BlockedUnits  int
-	Cost          float64
+	Cost          float64 // known cost so far; killed sessions report none, see CostUnknown
+	CostUnknown   int     // sessions killed before they reported a cost
+	RunBudget     float64 // SM_RUN_BUDGET: the run starts no step once Cost reaches it; 0 is no limit
+	Export        string  // prepare -> dispatch: whether the Ghidra export is usable, with its STAMP
 }
 
+// runCtx is cancelled by SIGINT or SIGTERM (set in main); agent sessions end with it.
+var runCtx = context.Background()
+
 func logEvent(kv map[string]any) {
+	kv["t"] = time.Now().Format(time.RFC3339) // the page orders events against status.json with it
 	b, _ := json.Marshal(kv)
 	fmt.Fprintln(os.Stderr, string(b))
 	if eventsPath != "" { // the live view reads this file
@@ -267,7 +314,8 @@ type Stats struct {
 	CacheCreation int            `json:"cache_creation_tokens"`
 	CacheRead     int            `json:"cache_read_tokens"`
 	BashCmds      map[string]int `json:"bash_commands"` // command word(s) -> times run
-	Killed        bool           `json:"killed"`        // timed out: the cost above is missing
+	Killed        bool           `json:"killed"`        // timed out or stopped: the cost above is unknown (reported as 0)
+	Outcome       string         `json:"outcome"`       // ok, invalid, timeout or over-budget
 	Unit          string         `json:"unit"`
 	OK            bool           `json:"ok"`
 	Result        string         `json:"result"` // the structured output, first 1500 bytes
@@ -301,28 +349,40 @@ func builtin(allow string) string {
 
 // agent runs one `claude -p` session and decodes its schema-checked result into out.
 // allow is the tool allow list; only those built-in tools are loaded and no MCP servers,
-// skills or hooks, to keep the cached prefix small. It returns false on missing or
-// off-schema output (the Invalid outcome).
-func agent(c *Ctx, state State, prompt, schema, allow string, edit bool, out any) bool {
+// skills or hooks, to keep the cached prefix small. It returns Ok, or why there is no result:
+// Invalid (missing or off-schema output), Timeout or OverBudget.
+func agent(c *Ctx, state State, prompt string, out any) (res Out) {
+	step := steps[state]
 	minutes := 60 // SM_TIMEOUT overrides, in minutes
 	if v, err := strconv.Atoi(os.Getenv("SM_TIMEOUT")); err == nil && v > 0 {
 		minutes = v
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(minutes)*time.Minute)
+	ctx, cancel := context.WithTimeout(runCtx, time.Duration(minutes)*time.Minute)
 	defer cancel()
-	budget := os.Getenv("SM_BUDGET")
-	if budget == "" {
-		budget = "2.00"
+	budget := 2.0
+	if v, err := strconv.ParseFloat(os.Getenv("SM_BUDGET"), 64); err == nil && v > 0 {
+		budget = v
+	}
+	if c.RunBudget > 0 { // a session may not spend more than the run has left
+		budget = min(budget, c.RunBudget-c.Cost)
 	}
 	// shortcut: per-run env overrides instead of per-repo config. SM_EXTRA_ALLOW adds allow
 	// entries to every agent; SM_ADD_DIRS (comma separated) lets them read outside the repo.
-	allow = allowFor(state, allow)
+	allow := allowFor(state, step.Allow)
 	if x := os.Getenv("SM_EXTRA_ALLOW"); x != "" {
 		allow += "," + x
 	}
-	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose", "--json-schema", schema,
-		"--no-session-persistence", "--allowedTools", allow, "--max-budget-usd", budget,
+	allow = withRTK(allow)
+	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose", "--json-schema", step.Schema,
+		"--no-session-persistence", "--allowedTools", allow, "--max-budget-usd", strconv.FormatFloat(budget, 'f', 4, 64),
 		"--append-system-prompt", rolePrompt(state)}
+	model := step.Model
+	if v := os.Getenv("SM_MODEL_" + strings.ToUpper(step.Name)); v != "" {
+		model = v
+	}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
 	// SM_AUDIT=1: every built-in tool is listed and permissions are bypassed, so `agent-sm stats`
 	// can show what each state really uses. Outward commands stay denied (auditDeny), MCP servers
 	// and skills stay off. Normal runs load only the allow list.
@@ -336,7 +396,7 @@ func agent(c *Ctx, state State, prompt, schema, allow string, edit bool, out any
 		args = append(args, "--permission-mode", "bypassPermissions", "--disallowedTools", deny)
 	} else {
 		args = append(args, "--tools", builtin(allow))
-		if edit {
+		if step.Edit {
 			args = append(args, "--permission-mode", "acceptEdits")
 		}
 	}
@@ -347,13 +407,16 @@ func agent(c *Ctx, state State, prompt, schema, allow string, edit bool, out any
 	}
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = c.Repo
+	// Its own process group, killed whole on timeout or stop, so probes and the Ghidra bridge go too.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	stdout, perr := cmd.StdoutPipe()
 	if perr == nil {
 		perr = cmd.Start()
 	}
 	if perr != nil {
 		logEvent(map[string]any{"event": "agent-error", "err": perr.Error()})
-		return false
+		return Invalid
 	}
 
 	st := &Stats{Issue: c.Issue, State: state.String(), ToolCalls: map[string]int{}, BashCmds: map[string]int{}}
@@ -362,7 +425,7 @@ func agent(c *Ctx, state State, prompt, schema, allow string, edit bool, out any
 	}
 	prog := &progress{c: c, state: state, unit: st.Unit, start: time.Now()}
 	var structured json.RawMessage
-	isErr := true
+	isErr, subtype := true, ""
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
 	for sc.Scan() {
@@ -434,7 +497,7 @@ func agent(c *Ctx, state State, prompt, schema, allow string, edit bool, out any
 				}
 			}
 		case ev.Type == "result":
-			isErr, structured = ev.IsError, ev.Structured
+			isErr, structured, subtype = ev.IsError, ev.Structured, ev.Subtype
 			st.Turns, st.DurationMs, st.CostUSD, st.Denials = ev.Turns, ev.Dur, ev.Cost, len(ev.Denied)
 			st.DeniedTools = map[string]int{}
 			for _, d := range ev.Denied {
@@ -448,18 +511,30 @@ func agent(c *Ctx, state State, prompt, schema, allow string, edit bool, out any
 		}
 	}
 	runErr := cmd.Wait()
-	st.Killed = ctx.Err() == context.DeadlineExceeded
+	st.Killed = ctx.Err() != nil && len(structured) == 0
 	prog.flush(true)
 	c.Cost += st.CostUSD
+	if st.Killed {
+		c.CostUnknown++
+	}
 	if state == Execute && st.Model != "" {
 		c.Model = st.Model
 	}
-	defer func() { writeStats(st); logEvent(map[string]any{"event": "agent", "stats": st}) }()
+	defer func() {
+		st.Outcome, st.OK = res.String(), res == Ok
+		writeStats(st)
+		logEvent(map[string]any{"event": "agent", "stats": st})
+	}()
 	if runErr != nil && len(structured) == 0 {
 		logEvent(map[string]any{"event": "agent-error", "err": runErr.Error()})
 	}
-	if isErr || len(structured) == 0 {
-		return false
+	switch {
+	case subtype == "error_max_budget_usd":
+		return OverBudget
+	case ctx.Err() == context.DeadlineExceeded && len(structured) == 0:
+		return Timeout
+	case isErr || len(structured) == 0:
+		return Invalid
 	}
 	dec := json.NewDecoder(bytes.NewReader(structured))
 	dec.DisallowUnknownFields()
@@ -467,8 +542,10 @@ func agent(c *Ctx, state State, prompt, schema, allow string, edit bool, out any
 	if len(st.Result) > 1500 {
 		st.Result = st.Result[:1500]
 	}
-	st.OK = dec.Decode(out) == nil
-	return st.OK
+	if dec.Decode(out) != nil {
+		return Invalid
+	}
+	return Ok
 }
 
 func issueText(c *Ctx) string {
@@ -508,7 +585,23 @@ func prepare(c *Ctx) Out {
 		logEvent(map[string]any{"event": "prepare", "err": "branch", "out": tail(out, 500)})
 		return Fail
 	}
+	c.Export = exportState()
 	return Ok
+}
+
+// exportState checks the Ghidra export's STAMP once, so no agent spends a turn on it.
+// SM_EXPORT overrides the directory (default ~/rescue-re/export).
+func exportState() string {
+	dir := os.Getenv("SM_EXPORT")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, "rescue-re", "export")
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "STAMP"))
+	if err != nil {
+		return dir + " has no STAMP: it is unfinished or missing, do not use it"
+	}
+	return dir + " is ready, STAMP: " + oneLine(string(b), 200)
 }
 
 // dispatch is the user message of an agent step, in the form of the old orchestrator's
@@ -522,8 +615,8 @@ func dispatch(c *Ctx, role, extra string) string {
 			}
 		}
 	}
-	return fmt.Sprintf("Dispatch: you are the %s. Ghidra copy: %s. Sub-issue #%d. Scratch directory: %s.%s%s\n\n%s\n\nStart now.",
-		role, c.Ghidra, c.Issue, c.Scratch, extra, notes, issueText(c))
+	return fmt.Sprintf("Dispatch: you are the %s. Ghidra copy: %s. Export: %s. Sub-issue #%d. Scratch directory: %s.%s%s\n\n%s\n\nStart now.",
+		role, c.Ghidra, c.Export, c.Issue, c.Scratch, extra, notes, issueText(c))
 }
 
 func plan(c *Ctx) Out {
@@ -538,11 +631,8 @@ func plan(c *Ctx) Out {
 		FitsOnePR          bool `json:"fits_one_pr"`
 		Units              []Unit
 	}
-	ok := agent(c, Plan, dispatch(c, "planner", ""),
-		`{"type":"object","properties":{"status":{"enum":["plan","blocked"]},"objective":{"type":"string"},"points":{"type":"array","items":{"type":"string"}},"points_derived":{"type":"boolean"},"files":{"type":"array","items":{"type":"string"}},"verification":{"type":"string"},"needs_investigation":{"type":"boolean"},"fits_one_pr":{"type":"boolean"},"units":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"points":{"type":"array","items":{"type":"string"}}},"required":["id","title","points"],"additionalProperties":false}}},"required":["status","objective","points","points_derived","files","verification","needs_investigation","fits_one_pr","units"],"additionalProperties":false}`,
-		"Read,Grep,Glob,Bash(gh issue view:*),Bash(git log:*)", false, &r)
-	if !ok {
-		return Invalid
+	if o := agent(c, Plan, dispatch(c, steps[Plan].Role, ""), &r); o != Ok {
+		return o
 	}
 	c.Objective, c.Points, c.PointsDerived, c.Files, c.Verification, c.Units = r.Objective, r.Points, r.PointsDerived, r.Files, r.Verification, r.Units
 	switch {
@@ -572,12 +662,8 @@ func investigate(c *Ctx) Out {
 	if c.Handoff != "" {
 		extra += "\n\nHandoff notes from earlier units:" + c.Handoff
 	}
-	// shortcut: default allow lists; override per state with SM_ALLOW_FILE (see `agent-sm allow`).
-	ok := agent(c, Investigate, dispatch(c, "investigator", extra),
-		`{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"},"fits_one_pr":{"type":"boolean"}},"required":["status","evidence","handoff","fits_one_pr"],"additionalProperties":false}`,
-		"Read,Grep,Glob,Bash(ghidra:*),Bash(git log:*),Bash(git grep:*)", false, &r)
-	if !ok {
-		return Invalid // the unit index does not move, so a retry redoes the same unit
+	if o := agent(c, Investigate, dispatch(c, steps[Investigate].Role, extra), &r); o != Ok {
+		return o // the unit index does not move, so an invalid-output retry redoes the same unit
 	}
 	if r.Status == "blocked" {
 		c.BlockedUnits++
@@ -624,11 +710,8 @@ func execute(c *Ctx) Out {
 	if c.Feedback != "" {
 		extra += "\n\nRevise: the work is already in the working tree. Make every change this lists:\n" + c.Feedback
 	}
-	ok := agent(c, Execute, dispatch(c, "executor", extra),
-		`{"type":"object","properties":{"status":{"enum":["done","partial","blocked"]},"summary":{"type":"string"},"closes_issue":{"type":"boolean"}},"required":["status","summary","closes_issue"],"additionalProperties":false}`,
-		"Read,Grep,Glob,Edit,Write,Bash(cargo:*)", true, &r)
-	if !ok {
-		return Invalid
+	if o := agent(c, Execute, dispatch(c, steps[Execute].Role, extra), &r); o != Ok {
+		return o
 	}
 	c.Summary, c.ClosesIssue = r.Summary, r.ClosesIssue && r.Status == "done"
 	if r.Status == "blocked" {
@@ -662,7 +745,32 @@ func inScope(path string, files []string) bool {
 	return false
 }
 
+// maxDiff is the largest staged diff put into the review dispatch, in bytes.
+const maxDiff = 60000
+
+// reviewDiff is the diff as the reviewer gets it: whole, or a note that says it was left out.
+// A cut diff is never passed on.
+func reviewDiff(diff, stat string) string {
+	if len(diff) <= maxDiff {
+		return diff
+	}
+	return fmt.Sprintf("NOT INCLUDED: the staged diff is %d bytes, over the %d-byte limit. Changed files:\n%s\n"+
+		"Read every file's diff yourself with `git diff --cached -- <path>` before you judge.", len(diff), maxDiff, stat)
+}
+
 func check(c *Ctx) Out {
+	// Formatting needs no judgment: fix it here instead of failing the format check and
+	// spending an execute round. SM_FMT overrides; with SM_CHECKS set and no SM_FMT, nothing runs.
+	fmtCmd := "cargo fmt --all"
+	if os.Getenv("SM_CHECKS") != "" {
+		fmtCmd = ""
+	}
+	if v, ok := os.LookupEnv("SM_FMT"); ok {
+		fmtCmd = v
+	}
+	if fmtCmd != "" {
+		sh(c.Repo, "sh", "-c", fmtCmd) // a failure here shows up in the checks below
+	}
 	if out, err := sh(c.Repo, "git", "add", "-A"); err != nil {
 		c.Feedback = "git add failed: " + out
 		return Fail
@@ -684,7 +792,11 @@ func check(c *Ctx) Out {
 		return Fail
 	}
 	diff, _ := sh(c.Repo, "git", "diff", "--cached")
-	c.Diff = tail(diff, 60000)
+	stat, _ := sh(c.Repo, "git", "diff", "--cached", "--stat")
+	c.Diff = reviewDiff(diff, stat)
+	if len(diff) > maxDiff {
+		logEvent(map[string]any{"event": "diff-not-inlined", "bytes": len(diff)})
+	}
 	return Pass
 }
 
@@ -695,11 +807,8 @@ func review(c *Ctx) Out {
 	}
 	extra := taskText(c) + " Executor's summary: " + c.Summary + "\nFindings:\n" + c.Evidence +
 		"\nChecks: all passed.\nDiff (staged):\n" + c.Diff
-	ok := agent(c, Review, dispatch(c, "reviewer", extra),
-		`{"type":"object","properties":{"verdict":{"enum":["PASS","REVISE","SPLIT","ESCALATE"]},"reasons":{"type":"array","items":{"type":"string"}}},"required":["verdict","reasons"],"additionalProperties":false}`,
-		"Read,Grep,Glob,Bash(git diff:*),Bash(git log:*)", false, &r)
-	if !ok {
-		return Invalid
+	if o := agent(c, Review, dispatch(c, steps[Review].Role, extra), &r); o != Ok {
+		return o
 	}
 	c.Verdict = strings.Join(r.Reasons, "; ")
 	switch r.Verdict {
@@ -712,10 +821,6 @@ func review(c *Ctx) Out {
 	}
 	c.Feedback = "review (REVISE):\n- " + strings.Join(r.Reasons, "\n- ")
 	return Fail
-}
-
-var steps = map[State]func(*Ctx) Out{
-	Prepare: prepare, Plan: plan, Investigate: investigate, Execute: execute, Check: check, Review: review, Publish: publish,
 }
 
 func contains(l []Out, o Out) bool {
@@ -731,10 +836,20 @@ func run(c *Ctx) Exit {
 	var visits [numStates]int
 	s := Prepare
 	for {
+		if runCtx.Err() != nil {
+			return Stopped
+		}
+		if c.RunBudget > 0 && c.Cost >= c.RunBudget {
+			logEvent(map[string]any{"event": "run-budget-reached", "before": s.String(), "cost_usd": c.Cost, "limit_usd": c.RunBudget})
+			return GaveUp
+		}
 		visits[s]++
 		c.Rounds = visits[Execute]
-		o := steps[s](c)
-		if !contains(outs[s], o) {
+		o := steps[s].Run(c)
+		if runCtx.Err() != nil { // a stopped step's result means nothing
+			return Stopped
+		}
+		if !contains(steps[s].Outs, o) {
 			panic(fmt.Sprintf("step %v returned undeclared out %v", s, o))
 		}
 		logEvent(map[string]any{"state": s.String(), "out": o.String(), "visit": visits[s], "cost_usd": c.Cost})
@@ -793,7 +908,7 @@ func main() {
 		return
 	}
 	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: agent-sm <repo-dir> <issue-number> | agent-sm stats|allow [file] | agent-sm serve [--repo DIR] [issue] [addr]  (SM_PUBLISH=pr|merge to push, open PRs, merge)")
+		fmt.Fprintln(os.Stderr, "usage: agent-sm <repo-dir> <issue-number> | agent-sm stats|allow [file] | agent-sm serve [--repo DIR] [issue] [addr]  (SM_PUBLISH=pr|merge to push, open PRs, merge; see README.md)")
 		os.Exit(2)
 	}
 	n, err := strconv.Atoi(os.Args[2])
@@ -813,7 +928,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "SM_PUBLISH must be empty, pr or merge")
 		os.Exit(2)
 	}
-	c := &Ctx{Repo: os.Args[1], Issue: n, Level: level, Ghidra: "none", Scratch: filepath.Join(scratchRoot(), strconv.Itoa(n))}
+	c := &Ctx{Repo: os.Args[1], Issue: n, Level: level, Ghidra: "none", Scratch: filepath.Join(scratchRoot(), strconv.Itoa(n)), RunBudget: 20}
+	if v, err := strconv.ParseFloat(os.Getenv("SM_RUN_BUDGET"), 64); err == nil && v >= 0 {
+		c.RunBudget = v // 0 turns the limit off
+	}
 	if v := os.Getenv("SM_GHIDRA_COPY"); v != "" {
 		c.Ghidra = v
 	}
@@ -824,13 +942,18 @@ func main() {
 	eventsPath = os.Getenv("SM_EVENTS")
 	if eventsPath == "" {
 		eventsPath = filepath.Join(c.Scratch, "events.jsonl")
-		os.Remove(eventsPath) // a new run starts a new event log
+		// A new run starts a new event log; the earlier attempt's log is kept beside it.
+		os.Rename(eventsPath, strings.TrimSuffix(eventsPath, ".jsonl")+"-"+time.Now().Format("20060102-150405")+".jsonl")
 	}
+	// SIGINT or SIGTERM (the page's Stop) ends the current step; the cleanup and exit event below still run.
+	var stop context.CancelFunc
+	runCtx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	exit := run(c)
 	followUp(c, exit)
 	stopGhidra(c)
 	cleanupWorktree(c)
-	logEvent(map[string]any{"exit": string(exit), "cost_usd": c.Cost})
+	logEvent(map[string]any{"exit": string(exit), "cost_usd": c.Cost, "sessions_with_unknown_cost": c.CostUnknown})
 	fmt.Println(exit)
 	if exit != Ready {
 		os.Exit(1)

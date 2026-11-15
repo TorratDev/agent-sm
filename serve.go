@@ -27,7 +27,16 @@ func scratchRoot() string {
 	if r := os.Getenv("SM_SCRATCH_ROOT"); r != "" {
 		return r
 	}
-	return "/tmp/agent-sm"
+	// Durable by default: run history must survive a reboot, which /tmp does not.
+	state := os.Getenv("XDG_STATE_HOME")
+	if state == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return filepath.Join(os.TempDir(), "agent-sm")
+		}
+		state = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(state, "agent-sm")
 }
 
 func readLines(path string, keep int) []json.RawMessage {
@@ -63,7 +72,7 @@ func latestRun(root string) (dir, issue string) {
 
 // serve shows a run live: GET / the page, /api/graph the transitions, /api/state the run so far.
 // It reads files only (status.json, events, stats), so it can also replay a finished run.
-// With no issue it follows the newest run under SM_SCRATCH_ROOT (default /tmp/agent-sm).
+// With no issue it follows the newest run under SM_SCRATCH_ROOT (default ~/.local/state/agent-sm).
 // With repo set it also lists the repo's open issues and starts runs from the page (localhost,
 // token-protected, one at a time).
 func serve(issue, addr, repo string) error {
@@ -109,14 +118,7 @@ func serve(issue, addr, repo string) error {
 		if b, err := os.ReadFile(filepath.Join(scratch, "status.json")); err == nil && json.Valid(b) {
 			status = b
 		}
-		var stats []json.RawMessage
-		for _, l := range readLines(statsPath, 2000) { // the stats file can hold many issues
-			var h struct{ Issue json.Number }
-			if json.Unmarshal(l, &h) == nil && (iss == "" || h.Issue.String() == iss) {
-				stats = append(stats, l)
-			}
-		}
-		json.NewEncoder(w).Encode(map[string]any{"issue": iss, "status": status, "events": readLines(events, 500), "stats": stats})
+		json.NewEncoder(w).Encode(map[string]any{"issue": iss, "status": status, "events": readLines(events, 500)})
 	})
 
 	// Starting and stopping runs: only with --repo, and only with the page's token.

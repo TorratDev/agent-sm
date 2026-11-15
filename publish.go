@@ -62,12 +62,13 @@ func publish(c *Ctx) Out {
 		return Fail
 	}
 
-	// Rebase onto the latest main and rerun the checks before pushing.
-	if _, ok := git(c, "fetch", "origin", "main"); !ok {
+	// Rebase onto the latest base branch and rerun the checks before pushing.
+	base := baseBranch()
+	if _, ok := git(c, "fetch", "origin", strings.TrimPrefix(base, "origin/")); !ok {
 		return Fail
 	}
 	before, _ := git(c, "rev-parse", "HEAD")
-	if _, ok := git(c, "rebase", "origin/main"); !ok {
+	if _, ok := git(c, "rebase", base); !ok {
 		git(c, "rebase", "--abort")
 		return Fail
 	}

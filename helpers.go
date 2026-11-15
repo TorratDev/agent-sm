@@ -115,6 +115,26 @@ func allowFor(s State, def string) string {
 	return def
 }
 
+// withRTK adds, for every Bash(cmd:*) entry, the forms the RTK rule makes agents type:
+// "rtk cmd" and "rtk proxy cmd". Never a bare Bash(rtk:*): rtk can run any command.
+func withRTK(allow string) string {
+	out := allow
+	for _, a := range strings.Split(allow, ",") {
+		if cmd, ok := strings.CutPrefix(strings.TrimSpace(a), "Bash("); ok && !strings.HasPrefix(cmd, "rtk ") {
+			out += ",Bash(rtk " + cmd + ",Bash(rtk proxy " + cmd
+		}
+	}
+	return out
+}
+
+// baseBranch is the branch runs start from and publish rebases onto (SM_BASE, default origin/main).
+func baseBranch() string {
+	if b := os.Getenv("SM_BASE"); b != "" {
+		return b
+	}
+	return "origin/main"
+}
+
 // suggestAllow builds an allow list from what a state really used, plus a small floor.
 func suggestAllow(state string, called, bash map[string]int) string {
 	set := map[string]bool{"Read": true, "Grep": true, "Glob": true}

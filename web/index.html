@@ -27,20 +27,27 @@
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
   .card b { display: block; font-size: 20px; }
   .card span { color: var(--mute); font-size: 12px; }
-  svg { width: 100%; height: auto; display: block; }
-  .node rect { fill: var(--node); stroke: var(--line); stroke-width: 1.5; rx: 8; }
-  .node text { fill: var(--node-ink); font-size: 13px; text-anchor: middle; }
-  .node .sm { font-size: 11px; fill: var(--mute); }
-  .node.visited rect { stroke: var(--done); }
-  .node.live rect { stroke: var(--live); stroke-width: 3; }
-  .node.exit rect { stroke-dasharray: 4 3; }
-  .node.exit.ready rect { stroke: var(--done); stroke-dasharray: none; }
-  .node.exit.bad rect { stroke: var(--bad); stroke-dasharray: none; }
-  .edge path { fill: none; stroke: var(--edge); stroke-width: 1.3; }
-  .edge text { fill: var(--mute); font-size: 10px; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
-  .edge.limit path { stroke-dasharray: 3 3; }
-  .edge.taken path { stroke: var(--taken); stroke-width: 2.4; }
-  .edge.taken text { fill: var(--taken); font-weight: 600; }
+  .st { border-bottom: 1px solid var(--line); }
+  .st:last-child { border-bottom: 0; }
+  .st summary { display: grid; grid-template-columns: 16px 110px 44px 130px 1fr auto; gap: 8px; align-items: center; padding: 7px 4px; cursor: pointer; list-style: none; }
+  .st summary::-webkit-details-marker { display: none; }
+  .st summary:hover { background: var(--node); }
+  .st summary:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--live); outline-offset: 1px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--edge); }
+  .st.visited .dot { background: var(--done); border-color: var(--done); }
+  .st.live .dot { background: var(--live); border-color: var(--live); animation: pulse 1.2s ease-in-out infinite; }
+  .st.live summary b { color: var(--live); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .st.live .dot { animation: none; } }
+  .st .mute, .mute { color: var(--mute); font-size: 12px; }
+  .st .body { padding: 2px 4px 10px 28px; }
+  .outs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--line); border-radius: 12px; padding: 1px 9px; font-size: 12px; color: var(--mute); }
+  .chip.taken { border-color: var(--taken); color: var(--taken); font-weight: 600; }
+  .chip.limit { border-style: dashed; }
+  .chip.exit::after { content: " (ends the run)"; font-weight: 400; }
+  pre { font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 8px 0 0; max-height: 320px; overflow: auto; }
+  details.feed summary { cursor: pointer; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th { color: var(--mute); font-weight: 500; }
@@ -65,12 +72,12 @@
   #feed .t { color: var(--mute); margin-right: 8px; }
   #feed .tool { color: var(--live); } #feed .say { color: var(--ink); } #feed .error { color: var(--bad); }
   .legend { color: var(--mute); font-size: 12px; margin-top: 6px; }
+  @media (max-width: 640px) { .st summary { grid-template-columns: 16px 1fr auto; } .st summary .wide { display: none; } }
 </style>
 </head>
 <body>
 <main>
   <h1>agent-sm <span id="issue" class="sub"></span></h1>
-  <div class="sub" id="line">waiting for data...</div>
 
   <section class="issues" id="issuesPanel">
     <h2>Process an issue</h2>
@@ -94,136 +101,117 @@
   <h2>Now</h2>
   <div class="cards panel" id="cards"></div>
 
-  <h2>Live activity</h2>
-  <div class="panel"><div id="feed"><span class="sub">nothing yet</span></div></div>
+  <details class="panel feed" id="feedBox" style="margin-top:8px">
+    <summary><span id="line" class="sub">waiting for data...</span></summary>
+    <div id="feed"></div>
+  </details>
 
-  <h2>State machine</h2>
-  <div class="panel">
-    <svg id="graph" viewBox="0 0 980 330" role="img" aria-label="State machine of the run"></svg>
-    <div class="legend">Blue: current state. Green outline: visited. Bold blue arrows: transitions taken. Dashed arrows: only taken after a retry limit. Numbers on a node: how many times it ran.</div>
+  <h2>States</h2>
+  <div class="panel" id="outline"></div>
+  <div class="legend">Open a state to see where each result leads and what it last returned. Blue: running now. Green: has run. Dashed result: only after the retry limit.</div>
+
+  <h2>Steps of this run</h2>
+  <div class="panel tablewrap"><table id="steps"><thead><tr><th>#</th><th>state</th><th>unit</th><th>result</th><th>model</th><th>turns</th><th>min</th><th>tool calls</th><th>denied</th><th>step $</th><th>run $</th></tr></thead><tbody></tbody></table></div>
+
+  <div id="deniedBox" hidden>
+    <h2>Denied commands</h2>
+    <div class="panel"><div class="mute">The agent asked for these and the allow list refused them. Add them to the state's allow list or change its prompt.</div><div id="denied"></div></div>
   </div>
-
-  <h2>Steps</h2>
-  <div class="panel tablewrap"><table id="steps"><thead><tr><th>#</th><th>state</th><th>unit</th><th>result</th><th>visit</th><th>run cost</th></tr></thead><tbody></tbody></table></div>
-
-  <h2>Agent sessions</h2>
-  <div class="panel tablewrap"><table id="sessions"><thead><tr><th>state</th><th>unit</th><th>ok</th><th>turns</th><th>min</th><th>tool calls</th><th>denied</th><th>output tok</th><th>cache read</th><th>cache write</th><th>$</th></tr></thead><tbody></tbody></table></div>
 </main>
 <script>
-const NODES = { // x, y centres on a 960x330 canvas
-  prepare: [60, 90], plan: [195, 90], investigate: [335, 90], execute: [480, 90], check: [625, 90], review: [770, 90], publish: [915, 90],
-  "gave-up": [230, 270], errored: [400, 270], split: [570, 270], escalated: [740, 270], ready: [915, 270],
-};
-const BAD = new Set(["gave-up", "errored", "escalated"]);
-const W = 88, H = 40;
-const ns = "http://www.w3.org/2000/svg";
-const el = (tag, attrs = {}, text) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
 let EDGES = [];
 const TOKEN = "__TOKEN__";
 let ISSUES = [], SEL = new Set(), CAN_RUN = false, BUSY = false;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-function edgePath(e) {
-  const [x1, y1] = NODES[e.from], [x2, y2] = NODES[e.to];
-  if (e.from === e.to) return { d: `M${x1 - 20},${y1 - H / 2} c-10,-34 50,-34 40,0`, lx: x1, ly: y1 - 46 };
-  if (e.exit) { // from a node's bottom to an exit box's top
-    const sx = x1, sy = y1 + H / 2, tx = x2, ty = y2 - H / 2, my = (sy + ty) / 2;
-    return { d: `M${sx},${sy} C${sx},${my} ${tx},${my} ${tx},${ty}`, lx: (sx + tx) / 2, ly: my };
-  }
-  if (x2 < x1) { // retry edge: arc over the top
-    const cy = y1 - 66 - 8 * Math.abs(Math.round((x1 - x2) / 130));
-    return { d: `M${x1 - 10},${y1 - H / 2} C${x1 - 10},${cy} ${x2 + 10},${cy} ${x2 + 10},${y2 - H / 2}`, lx: (x1 + x2) / 2, ly: cy + 14 };
-  }
-  return { d: `M${x1 + W / 2},${y1} L${x2 - W / 2 - 4},${y2}`, lx: (x1 + x2) / 2, ly: y1 - 6 };
-}
-
-function drawGraph(visits, live, taken, exit) {
-  const svg = document.getElementById("graph");
-  svg.replaceChildren();
-  const defs = el("defs");
-  const m = el("marker", { id: "ah", viewBox: "0 0 8 8", refX: 7, refY: 4, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" });
-  m.appendChild(el("path", { d: "M0,0 L8,4 L0,8 z", fill: "currentColor", style: "color:var(--edge)" }));
-  defs.appendChild(m); svg.appendChild(defs);
-  const seenLabel = {};
-  for (const e of EDGES) {
-    if (!NODES[e.from] || !NODES[e.to]) continue;
-    const key = e.from + "|" + e.out;
-    const g = el("g", { class: "edge" + (e.limit ? " limit" : "") + (taken[key + "|" + e.to] ? " taken" : "") });
-    const p = edgePath(e);
-    const path = el("path", { d: p.d, "marker-end": "url(#ah)" });
-    g.appendChild(path);
-    const k = Math.round(p.lx) + "," + Math.round(p.ly);
-    const dy = (seenLabel[k] = (seenLabel[k] || 0) + 1) - 1;
-    const n = taken[key + "|" + e.to];
-    g.appendChild(el("title", {}, e.from + " -" + e.out + "-> " + e.to + (e.limit ? " (after the retry limit)" : "")));
-    if (!e.exit || n) g.appendChild(el("text", { x: p.lx, y: p.ly + dy * 11 }, e.out + (n > 1 ? " x" + n : ""))); // exit edges are labelled only once taken, hover for the rest
-    svg.appendChild(g);
-  }
-  for (const [name, [x, y]] of Object.entries(NODES)) {
-    const isExit = !(name in visits) && ["gave-up", "errored", "split", "escalated", "ready"].includes(name);
-    const cls = ["node"];
-    if (isExit) { cls.push("exit"); if (name === "ready") cls.push("ready"); if (BAD.has(name)) cls.push("bad"); }
-    if (visits[name]) cls.push("visited");
-    if (live === name) cls.push("live");
-    if (exit === name) cls.push(name === "ready" ? "ready" : "bad", "visited");
-    const g = el("g", { class: cls.join(" ") });
-    g.appendChild(el("rect", { x: x - W / 2, y: y - H / 2, width: W, height: H }));
-    g.appendChild(el("text", { x, y: y + 4 }, name));
-    if (visits[name]) g.appendChild(el("text", { x: x + W / 2 - 8, y: y - H / 2 + 12, class: "sm", "text-anchor": "end" }, "x" + visits[name]));
-    svg.appendChild(g);
-  }
-}
+// put sets an element's HTML only when it changed, so scroll positions and focus survive a poll.
+const LAST = {};
+function put(id, html) { if (LAST[id] !== html) { LAST[id] = html; document.getElementById(id).innerHTML = html; } }
+const OPEN = new Set(); // states the reader opened in the outline
+const BADOUT = ["fail", "blocked", "invalid", "split", "escalate", "timeout", "over-budget"];
+const outCls = o => BADOUT.includes(o) ? "no" : (o === "more" ? "wait" : "ok");
+const pretty = r => { try { return JSON.stringify(JSON.parse(r), null, 2); } catch { return r; } }; // a cut result is not valid JSON
 
 const fmt = (n, d = 2) => (n == null ? "-" : Number(n).toFixed(d));
 const sec = s => s == null ? "-" : (s >= 60 ? Math.floor(s / 60) + "m " + (s % 60) + "s" : s + "s");
 
+let RUNNING = false;
 function render(data) {
   document.getElementById("issue").textContent = data.issue ? "#" + data.issue : "(no run yet)";
-  const events = data.events || [], stats = data.stats || [], st = data.status;
-  const steps = events.filter(e => e.state && e.out);
+  const events = data.events || [], st = data.status;
   const exitEv = events.filter(e => e.exit).pop();
-  const visits = {}, taken = {};
-  let prev = null;
-  steps.forEach(e => {
-    visits[e.state] = (visits[e.state] || 0) + 1;
-  });
-  // taken edges: each step's (state,out) leads to the next step's state, or to the exit
+  // Each agent session logs its stats just before its step's result: join them.
+  const steps = [];
+  let pending = null, lastT = 0;
+  for (const e of events) {
+    if (e.t) lastT = Date.parse(e.t);
+    if (e.event === "agent") pending = e.stats;
+    else if (e.state && e.out) { steps.push({ ...e, s: pending }); pending = null; }
+  }
+  const per = {}, taken = {};
+  let total = 0;
   steps.forEach((e, i) => {
+    const p = per[e.state] = per[e.state] || { visits: 0, cost: 0 };
+    p.visits++; p.last = e;
+    if (e.s) { p.cost += e.s.cost_usd || 0; total += e.s.cost_usd || 0; p.model = e.s.model || p.model; }
     const nxt = steps[i + 1] ? steps[i + 1].state : (exitEv ? exitEv.exit : null);
     if (nxt) { const k = e.state + "|" + e.out + "|" + nxt; taken[k] = (taken[k] || 0) + 1; }
   });
-  const running = st && !exitEv;
-  const live = running ? st.state : null;
-  drawGraph(visits, live, taken, exitEv ? exitEv.exit : null);
 
-  const cost = exitEv ? exitEv.cost_usd : (steps.length ? steps[steps.length - 1].cost_usd : 0);
+  // What runs now: the session in status.json if it is newer than the last logged event,
+  // else the state the last result leads to (a program step, or a session that has not reported yet).
+  const stT = st ? Date.parse(st.updated) : 0;
+  const session = !!st && !exitEv && stT >= lastT;
+  const lastStep = steps[steps.length - 1];
+  const nextEdge = lastStep && EDGES.find(e => e.from === lastStep.state && e.out === lastStep.out && !e.exit && !e.limit);
+  const live = exitEv ? null : (session ? st.state : (nextEdge ? nextEdge.to : (st ? st.state : null)));
+  const idleMin = Math.floor((Date.now() - Math.max(stT, lastT)) / 60000);
+  const stale = !exitEv && live && idleMin >= 10; // a killed process leaves no exit event
+  RUNNING = !!live && !stale;
+
+  const cost = exitEv ? exitEv.cost_usd : (lastStep ? lastStep.cost_usd : 0);
   const cards = [];
-  cards.push(["state", exitEv ? "ended: " + exitEv.exit : (running ? st.state : "idle"), exitEv ? (exitEv.exit === "ready" ? "ok" : "no") : "wait"]);
-  if (running && st.units > 0) cards.push(["unit", st.unit_index + " / " + st.units + " " + (st.unit || ""), ""]);
-  if (running) { cards.push(["this step", sec(st.elapsed_s), ""]); cards.push(["tool calls", st.tool_calls, ""]); }
-  cards.push(["run cost", "$" + fmt(cost), ""]);
-  document.getElementById("cards").innerHTML = cards.map(c => `<div class="card"><b class="${c[2]}">${c[1]}</b><span>${c[0]}</span></div>`).join("");
-  document.getElementById("line").textContent = running && st.last_tool
-    ? "last: " + st.last_tool + (st.last_command ? " (" + st.last_command + ")" : "") + " - updated " + st.updated
-    : (exitEv ? "run finished" : "waiting for the first step");
+  cards.push(["state", exitEv ? "ended: " + exitEv.exit : (live || "idle"), exitEv ? (exitEv.exit === "ready" ? "ok" : "no") : "wait"]);
+  if (stale) cards.push(["no update; the run may have been killed", idleMin + " min", "no"]);
+  if (session && st.units > 0) cards.push(["unit", st.unit_index + " / " + st.units + " " + esc(st.unit || ""), ""]);
+  if (session && !stale) { cards.push(["this step", sec(st.elapsed_s), ""]); cards.push(["tool calls", st.tool_calls, ""]); }
+  cards.push(["run cost", "$" + fmt(cost) + (exitEv && exitEv.sessions_with_unknown_cost ? " + ?" : ""), ""]);
+  put("cards", cards.map(c => `<div class="card"><b class="${c[2]}">${c[1]}</b><span>${c[0]}</span></div>`).join(""));
+  document.title = (data.issue ? "#" + data.issue + " " : "") + (exitEv ? exitEv.exit : (live || "idle")) + " - agent-sm";
 
   const feed = (st && st.feed) || [];
-  document.getElementById("feed").innerHTML = feed.length
-    ? feed.slice().reverse().map(f => `<div><span class="t">${f.t}</span><span class="${f.kind}">${f.kind === "say" ? "says: " : ""}${esc(f.text)}</span></div>`).join("")
-    : '<span class="sub">nothing yet</span>';
+  document.getElementById("line").textContent = session && st.last_tool
+    ? "last: " + st.last_tool + (st.last_command ? " (" + st.last_command + ")" : "") + " at " + st.updated.slice(11, 19) + " - open for the last " + feed.length + " lines"
+    : (exitEv ? "run finished" : (live ? live + " is running (no agent activity to show)" : "waiting for the first step"));
+  put("feed", feed.slice().reverse().map(f => `<div><span class="t">${f.t}</span><span class="${f.kind}">${f.kind === "say" ? "says: " : ""}${esc(f.text)}</span></div>`).join(""));
 
-  const unitOf = {}; // investigate steps take the unit of the matching session, in order
-  const invStats = stats.filter(s => s.state === "investigate");
-  let ii = 0;
-  document.querySelector("#steps tbody").innerHTML = steps.map((e, i) => {
-    const unit = e.state === "investigate" ? ((invStats[ii++] || {}).unit || "") : "";
-    const cls = ["fail", "blocked", "invalid", "split", "escalate"].includes(e.out) ? "no" : (e.out === "more" ? "wait" : "ok");
-    return `<tr><td>${i + 1}</td><td>${e.state}</td><td>${unit}</td><td class="${cls}">${e.out}</td><td>${e.visit}</td><td>$${fmt(e.cost_usd)}</td></tr>`;
-  }).join("");
-  document.querySelector("#sessions tbody").innerHTML = stats.map(s => {
-    const calls = Object.values(s.tool_calls || {}).reduce((a, b) => a + b, 0);
-    return `<tr><td>${s.state}</td><td>${s.unit || ""}</td><td class="${s.ok ? "ok" : "no"}">${s.ok ? "yes" : (s.killed ? "killed" : "no")}</td><td>${s.turns}</td><td>${fmt((s.duration_ms || 0) / 60000, 1)}</td><td>${calls}</td><td>${s.permission_denials || 0}</td><td>${s.output_tokens}</td><td>${s.cache_read_tokens}</td><td>${s.cache_creation_tokens}</td><td>${fmt(s.cost_usd)}</td></tr>`;
-  }).join("");
+  const names = [...new Set(EDGES.map(e => e.from))];
+  put("outline", names.map(name => {
+    const p = per[name] || { visits: 0, cost: 0 };
+    const chips = EDGES.filter(e => e.from === name).map(e => {
+      const n = taken[name + "|" + e.out + "|" + e.to];
+      return `<span class="chip${n ? " taken" : ""}${e.limit ? " limit" : ""}${e.exit ? " exit" : ""}" title="${e.limit ? "only after the retry limit" : ""}">${e.out} &rarr; ${e.to}${n > 1 ? " x" + n : ""}</span>`;
+    }).join("");
+    const res = p.last && p.last.s && p.last.s.result;
+    return `<details class="st${p.visits ? " visited" : ""}${live === name ? " live" : ""}" data-s="${name}"${OPEN.has(name) ? " open" : ""}>
+      <summary><span class="dot"></span><b>${name}</b><span class="mute">${p.visits ? "x" + p.visits : ""}</span>
+        <span class="mute wide">${esc(p.model || "")}</span>
+        <span class="wide ${p.last ? outCls(p.last.out) : "mute"}">${live === name ? "running" : (p.last ? "last: " + p.last.out : "not run")}</span>
+        <span class="mute">${p.cost ? "$" + fmt(p.cost) + " (" + Math.round(100 * p.cost / total) + "%)" : ""}</span></summary>
+      <div class="body"><div class="outs">${chips}</div>${res ? `<pre>${esc(pretty(res))}</pre>` : (p.model ? '<div class="mute">no result returned</div>' : "")}</div>
+    </details>`;
+  }).join(""));
+
+  put("steps", "<thead>" + document.querySelector("#steps thead").innerHTML + "</thead><tbody>" + steps.map((e, i) => {
+    const s = e.s || {}, a = !!e.s;
+    const calls = Object.values(s.tool_calls || {}).reduce((x, y) => x + y, 0);
+    const den = s.permission_denials || 0;
+    return `<tr><td>${i + 1}</td><td>${e.state}</td><td>${esc(s.unit || "")}</td><td class="${outCls(e.out)}">${e.out}${s.killed ? " (killed)" : ""}</td><td>${esc(s.model || "")}</td><td>${a ? s.turns : ""}</td><td>${a ? fmt((s.duration_ms || 0) / 60000, 1) : ""}</td><td>${a ? calls : ""}</td><td class="${den ? "no" : ""}">${a ? den : ""}</td><td>${a ? (s.killed ? "?" : "$" + fmt(s.cost_usd)) : ""}</td><td>$${fmt(e.cost_usd)}</td></tr>`;
+  }).join("") + "</tbody>");
+
+  const denied = steps.filter(e => e.s && (e.s.denied_sample || []).length);
+  document.getElementById("deniedBox").hidden = !denied.length;
+  put("denied", denied.map(e => `<div style="margin-top:8px"><b>${e.state}</b> <span class="mute">${e.s.permission_denials} denied</span>${e.s.denied_sample.map(d => `<pre>${esc(d)}</pre>`).join("")}</div>`).join(""));
 }
 
 function renderIssues() {
@@ -269,7 +257,7 @@ document.getElementById("runBtn").addEventListener("click", async () => {
   const publish = document.getElementById("publish").value;
   const msg = "Run " + issues.map(n => "#" + n).join(", ") + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?";
   if (!confirm(msg)) return;
-  try { renderQueue(await post("/api/run", { issues, publish, audit: document.getElementById("audit").checked, budget: document.getElementById("budget").value })); SEL.clear(); renderIssues(); }
+  try { renderQueue(await post("/api/run", { issues, publish, audit: document.getElementById("audit").checked, budget: document.getElementById("budget").value })); SEL.clear(); renderIssues(); tick(); }
   catch (e) { document.getElementById("qstate").textContent = "cannot start: " + e.message; }
 });
 document.getElementById("stopBtn").addEventListener("click", async () => {
@@ -283,8 +271,14 @@ async function tick() {
     render(await (await fetch("/api/state")).json());
     await pollQueue();
   } catch (e) { document.getElementById("line").textContent = "cannot reach the server: " + e; }
+  clearTimeout(TIMER);
+  TIMER = setTimeout(tick, RUNNING || BUSY ? 2000 : 10000); // nothing changes fast when no run is live
 }
-tick(); setInterval(tick, 2000);
+let TIMER;
+document.getElementById("outline").addEventListener("toggle", e => { // toggle does not bubble: capture it
+  const n = e.target.dataset && e.target.dataset.s; if (n) e.target.open ? OPEN.add(n) : OPEN.delete(n);
+}, true);
+tick();
 </script>
 </body>
 </html>

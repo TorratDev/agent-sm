@@ -35,7 +35,13 @@ func report(jsonl []byte) string {
 		denied := map[string]int{}
 		bash := map[string]int{}
 		var sample []string
+		models := map[string]int{}
+		killed := 0
 		for _, st := range list {
+			models[st.Model]++
+			if st.Killed {
+				killed++
+			}
 			cost += st.CostUSD
 			create += st.CacheCreation
 			read += st.CacheRead
@@ -63,6 +69,18 @@ func report(jsonl []byte) string {
 		n := len(list)
 		fmt.Fprintf(&b, "%s: %d sessions, $%.3f total ($%.3f avg), avg cache-create %d, cache-read %d, output %d, turns %.1f\n",
 			state, n, cost, cost/float64(n), create/n, read/n, out/n, float64(turns)/float64(n))
+		var ml []string
+		for m, k := range models {
+			if m == "" {
+				m = "unknown"
+			}
+			ml = append(ml, fmt.Sprintf("%s x%d", m, k))
+		}
+		sort.Strings(ml)
+		fmt.Fprintf(&b, "  models: %s\n", strings.Join(ml, ", "))
+		if killed > 0 {
+			fmt.Fprintf(&b, "  note: %d killed sessions reported no cost; the total above leaves them out\n", killed)
+		}
 		if n < thinEvidence {
 			fmt.Fprintf(&b, "  note: only %d sessions, unused is not proof yet (want %d+)\n", n, thinEvidence)
 		}
