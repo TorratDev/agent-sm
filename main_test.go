@@ -120,3 +120,33 @@ func TestUnitLoop(t *testing.T) {
 		t.Errorf("direct = %+v, want execute", n)
 	}
 }
+
+func TestResume(t *testing.T) {
+	old := steps
+	defer func() { steps = old }()
+	steps = map[State]func(*Ctx) Out{
+		Review:  func(c *Ctx) Out { c.Verdict = "fine"; return Pass },
+		Publish: func(*Ctx) Out { return Ok },
+	}
+	dir := t.TempDir()
+	saveCtx(&Ctx{Issue: 7, Scratch: dir, Repo: "old", Evidence: "kept"})
+
+	c := &Ctx{Issue: 7, Scratch: dir, Repo: "new"}
+	s, err := resume(c, "review")
+	if err != nil || s != Review || c.Repo != "new" || c.Evidence != "kept" {
+		t.Fatalf("resume = %v, %v, ctx %+v", s, err, c)
+	}
+	if e := run(c, s); e != Ready {
+		t.Errorf("resumed run = %v, want ready", e)
+	}
+	again := &Ctx{Issue: 7, Scratch: dir}
+	if _, err := resume(again, "publish"); err != nil || again.Verdict != "fine" {
+		t.Errorf("run did not save its steps: %v, %+v", err, again)
+	}
+	if _, err := resume(&Ctx{Issue: 7, Scratch: dir}, "prepare"); err == nil {
+		t.Error("--from prepare accepted")
+	}
+	if _, err := resume(&Ctx{Issue: 8, Scratch: dir}, "review"); err == nil {
+		t.Error("another issue's ctx.json accepted")
+	}
+}
