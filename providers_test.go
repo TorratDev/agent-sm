@@ -822,7 +822,7 @@ if [ "$SM_TEST_MODE" = "failure" ]; then exit 1; fi
 							t.Fatalf("capture result = %s, %v", result, err)
 						}
 						if provider == "copilot" {
-							if !strings.Contains(string(request), "--sync-session=off") || strings.Contains(string(request), "--share") {
+							if !strings.Contains(string(request), "--no-remote-export") || strings.Contains(string(request), "--share") {
 								t.Fatal("transcript enabled remote sharing")
 							}
 							if mode == "missing-messages" || mode == "startup" {

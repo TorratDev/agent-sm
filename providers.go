@@ -135,7 +135,7 @@ func copilotAgent(c *Ctx, state State, prompt string, out any, transcript *agent
 	usagePath := filepath.Join(dir, "usage.json")
 	args := copilotArgs(state, prompt, usagePath, limit)
 	if transcript != nil {
-		args = append(args, "--session-id", transcript.sessionID, "--sync-session=off")
+		args = append(args, "--session-id", transcript.sessionID, "--no-remote-export")
 		if err := transcript.request(args, state, cancel); err != nil {
 			logEvent(map[string]any{"event": "transcript-error", "err": err.Error()})
 			return Invalid
