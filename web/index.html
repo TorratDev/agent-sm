@@ -94,6 +94,7 @@
   .runbar input[type=number] { width: 74px; }
   .queue { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; font-size: 12px; align-items: center; }
   #msg { color: var(--bad); font-size: 13px; margin-top: 8px; }
+  #note { color: var(--mute); font-size: 13px; margin-top: 8px; }
 
   /* run summary */
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -176,6 +177,7 @@
     <button class="btn primary" id="selectRepo">Use setup</button>
   </section>
   <div id="msg" role="alert"></div>
+  <div id="note" role="status"></div>
   <dialog class="panel folder-picker" id="folderPicker" aria-labelledby="folderTitle">
     <div class="head"><h2 id="folderTitle">Choose a repository folder</h2><button class="btn" id="folderCancel" type="button">Cancel</button></div>
     <p class="mute">Folders on the computer running agent-sm. Select a Git working tree; nothing is uploaded.</p>
@@ -534,12 +536,13 @@ $("runBtn").addEventListener("click", async () => {
   if (!confirm("Run " + issues.map(n => "#" + n).join(", ") + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?"
     + "\n\nExisting branches and worktrees are kept. Each fresh attempt starts from the issue's base and uses the next available numbered name."
     + (parents.length ? "\n\n" + parents.map(n => "#" + n).join(", ") + " has sub-issues: its open sub-issues run in its place, one after another. Sub-issues that depend on an open issue are skipped." : ""))) return;
-  $("msg").textContent = "";
+  $("msg").textContent = $("note").textContent = "";
   try {
     SEL.clear(); PICKED = null;
     const body = { issues, repo: SELECTED_REPO, language: SELECTED_LANGUAGE, publish, provider: SELECTED_AGENT, audit: $("audit").checked, transcripts: $("transcripts").checked, budget: $("budget").value, models: chosenModels() };
     const q = await post("/api/run", body);
-    renderQueue(q); $("msg").textContent = (q.notes || []).join(" · "); tick();
+    renderQueue(q); $("note").textContent = (q.notes || []).join(" · "); tick();
+    if ($("note").textContent) loadIssues(true); // a note can mean an issue was closed
   }
   catch (e) { $("msg").textContent = "Cannot start: " + e.message; }
 });
