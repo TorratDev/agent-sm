@@ -95,14 +95,6 @@
   .queue { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; font-size: 12px; align-items: center; }
   #msg { color: var(--bad); font-size: 13px; margin-top: 8px; }
 
-  /* tracker management */
-  .management { padding: 14px 16px; }
-  .management textarea { display: block; width: 100%; margin-top: 6px; font-family: var(--mono); resize: vertical; }
-  .management p { margin: 0 0 10px; }
-  .management .runbar { padding: 0; margin-bottom: 10px; }
-  .management pre { margin: 6px 0 12px; }
-  #managementDigest { overflow-wrap: anywhere; }
-
   /* run summary */
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
   .stat { padding: 12px 14px; }
@@ -218,35 +210,6 @@
     </div>
     <div class="panel runbar" id="modelBar"><b>Models</b><span class="mute" style="font-size:12px">per step, for the runs you start next</span><span class="grow"></span><span id="models" style="display:contents"></span></div>
     <div class="queue" id="qstate"></div>
-  </section>
-
-  <section aria-labelledby="managementHeading">
-    <div class="head"><h2 id="managementHeading">Tracker management</h2><span class="count" id="managementMode" role="status">Checking service mode…</span></div>
-    <div class="panel management" id="managementPanel" aria-busy="false">
-      <p class="mute" id="managementHelp">Preview is read-only. Apply writes the approved structure to trackers; Reconcile retries managed operations and configured lifecycle updates. Service management is separate from Publish and can update issues even for local-only runs.</p>
-      <label for="managementPlan">Issue plan JSON</label>
-      <textarea class="field" id="managementPlan" rows="6" spellcheck="false" aria-describedby="managementHelp" placeholder='{"id":"example","items":[{"id":"story","title":"Example story","body":"Describe the work","kind":"story"}]}' disabled></textarea>
-      <div class="runbar">
-        <button class="btn" id="managementPreview" disabled>Preview (read-only)</button>
-        <button class="btn" id="managementRefresh">Refresh status</button>
-        <button class="btn" id="managementReconcile" disabled>Reconcile / retry</button>
-      </div>
-      <div id="managementProposal" hidden>
-        <h3>Read-only preview</h3>
-        <pre id="managementPreviewData" tabindex="0" aria-label="Proposed tracker operations"></pre>
-        <p>Digest: <strong class="num" id="managementDigest"></strong></p>
-        <div class="runbar">
-          <label><input type="checkbox" id="managementApprove" aria-describedby="managementDigest" disabled> I approve exactly this displayed digest</label>
-          <button class="btn danger" id="managementApply" disabled>Apply approved digest</button>
-        </div>
-      </div>
-      <p id="managementNotice" role="status"></p>
-      <p id="managementError" class="no" role="alert"></p>
-      <details open>
-        <summary>Managed operations, items and sync errors</summary>
-        <pre id="managementState" tabindex="0" aria-label="Managed operation status">No status loaded.</pre>
-      </details>
-    </div>
   </section>
 
   <section>
@@ -439,105 +402,6 @@ async function post(path, body) {
   if (!r.ok) throw Object.assign(new Error(await r.text()), { status: r.status });
   return r.json();
 }
-let MANAGEMENT_ENABLED = false, MANAGEMENT_BUSY = false, MANAGEMENT_PREVIEW = null, MANAGEMENT_INPUT = "";
-function managementControls() {
-  const available = MANAGEMENT_ENABLED && !MANAGEMENT_BUSY;
-  $("managementPanel").setAttribute("aria-busy", String(MANAGEMENT_BUSY));
-  $("managementPlan").disabled = !available;
-  $("managementPreview").disabled = !available || !$("managementPlan").value.trim();
-  $("managementRefresh").disabled = MANAGEMENT_BUSY;
-  $("managementReconcile").disabled = !available;
-  $("managementApprove").disabled = !available || !MANAGEMENT_PREVIEW;
-  $("managementApply").disabled = !available || !MANAGEMENT_PREVIEW || !$("managementApprove").checked || MANAGEMENT_INPUT !== $("managementPlan").value;
-}
-function invalidateManagementPreview() {
-  MANAGEMENT_PREVIEW = null;
-  $("managementApprove").checked = false;
-  managementControls();
-}
-function renderManagementState(state) {
-  $("managementState").textContent = JSON.stringify(state, null, 2);
-}
-async function loadManagement() {
-  if (MANAGEMENT_BUSY) return;
-  MANAGEMENT_BUSY = true; managementControls();
-  try {
-    const r = await fetch("/api/management");
-    if (!r.ok) throw Object.assign(new Error(await r.text()), { status: r.status });
-    const data = await r.json();
-    MANAGEMENT_ENABLED = data.enabled === true;
-    $("managementMode").textContent = MANAGEMENT_ENABLED ? "Service mode enabled" : "Service mode disabled (read-only status)";
-    renderManagementState(data.state);
-    if (!MANAGEMENT_ENABLED) invalidateManagementPreview();
-  } catch (e) {
-    MANAGEMENT_ENABLED = false;
-    invalidateManagementPreview();
-    $("managementMode").textContent = "Management unavailable";
-    $("managementError").textContent = "Cannot load management status: " + e.message;
-  } finally { MANAGEMENT_BUSY = false; managementControls(); }
-}
-$("managementPlan").addEventListener("input", () => {
-  invalidateManagementPreview();
-  $("managementProposal").hidden = true;
-  $("managementNotice").textContent = "Plan changed. Preview again before applying.";
-});
-$("managementApprove").addEventListener("change", managementControls);
-$("managementRefresh").addEventListener("click", () => {
-  $("managementError").textContent = "";
-  return loadManagement();
-});
-$("managementPreview").addEventListener("click", async () => {
-  if (!MANAGEMENT_ENABLED || MANAGEMENT_BUSY) return;
-  invalidateManagementPreview();
-  $("managementProposal").hidden = true;
-  $("managementError").textContent = "";
-  $("managementNotice").textContent = "";
-  MANAGEMENT_BUSY = true; managementControls();
-  try {
-    const input = $("managementPlan").value;
-    const plan = JSON.parse(input);
-    if (!plan || typeof plan !== "object" || Array.isArray(plan) || typeof plan.id !== "string" || !plan.id.trim() || !Array.isArray(plan.items)) throw new Error("Expected a WorkPlan object with id and items");
-    const preview = await post("/api/management/preview", plan);
-    if (!preview || typeof preview.digest !== "string" || !preview.digest.trim()) throw new Error("Server returned no preview digest");
-    MANAGEMENT_PREVIEW = preview;
-    MANAGEMENT_INPUT = input;
-    $("managementPreviewData").textContent = JSON.stringify(preview, null, 2);
-    $("managementDigest").textContent = preview.digest;
-    $("managementProposal").hidden = false;
-    $("managementNotice").textContent = "Preview only; nothing applied. Review scope, expected state and operations, then approve the digest explicitly.";
-  } catch (e) { $("managementError").textContent = "Cannot preview: " + e.message; }
-  finally { MANAGEMENT_BUSY = false; managementControls(); }
-});
-$("managementApply").addEventListener("click", async () => {
-  if ($("managementApply").disabled) return;
-  const digest = MANAGEMENT_PREVIEW.digest;
-  // Consume approval before sending: an uncertain response must never trigger an automatic retry.
-  invalidateManagementPreview();
-  MANAGEMENT_BUSY = true; managementControls();
-  $("managementError").textContent = "";
-  $("managementNotice").textContent = "Applying approved digest…";
-  try {
-    renderManagementState(await post("/api/management/apply", { digest }));
-    $("managementNotice").textContent = "Apply completed. Refresh status to inspect progress; preview again for any further structural changes.";
-  } catch (e) {
-    $("managementNotice").textContent = "Approval cleared. Inspect status before retrying; ambiguous creates require reconciliation, not blind re-apply.";
-    $("managementError").textContent = "Cannot apply: " + e.message;
-  } finally { MANAGEMENT_BUSY = false; managementControls(); }
-});
-$("managementReconcile").addEventListener("click", async () => {
-  if (!MANAGEMENT_ENABLED || MANAGEMENT_BUSY) return;
-  invalidateManagementPreview();
-  MANAGEMENT_BUSY = true; managementControls();
-  $("managementError").textContent = "";
-  $("managementNotice").textContent = "Reconciling managed operations…";
-  try {
-    renderManagementState(await post("/api/management/reconcile", {}));
-    $("managementNotice").textContent = "Reconciliation completed. Inspect managed status and sync errors. Structural changes still need a new preview and approval.";
-  } catch (e) {
-    $("managementNotice").textContent = "Inspect status before retrying reconciliation.";
-    $("managementError").textContent = "Cannot reconcile: " + e.message;
-  } finally { MANAGEMENT_BUSY = false; managementControls(); }
-});
 
 // Model IDs belong to the selected CLI's catalog, not a hardcoded web catalog.
 function saved() { try { return JSON.parse(localStorage.getItem("sm-models-" + QUEUE.provider)) || {}; } catch { return {}; } }
@@ -697,7 +561,6 @@ $("repoPath").value = DEFAULT_REPO;
 $("language").value = "auto";
 $("agent").value = DEFAULT_AGENT;
 if (DEFAULT_REPO) $("selectRepo").click();
-loadManagement();
 tick();
 </script>
 </body>
