@@ -378,9 +378,14 @@ api)
     malformed) printf '[]\n{';;
     empty-output) :;;
     null) printf 'null\n';;
+    all-closed|close-fails) printf '%s\n' '[{"number":11,"state":"closed"},{"number":13,"state":"closed"}]';;
     *) exit 2;;
   esac;;
 issue)
+  if [ "$2" = close ]; then
+    if [ "$SM_TEST_GH" = close-fails ]; then printf 'gh: no permission\n' >&2; exit 1; fi
+    printf '%s\n' "$*" > "$SM_TEST_CLOSED"; exit 0
+  fi
   case "$3" in
     7) printf 'OPEN\n';;
     8) printf 'CLOSED\n';;
@@ -390,6 +395,8 @@ issue)
 esac
 `, 0o755)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	closedLog := filepath.Join(dir, "closed")
+	t.Setenv("SM_TEST_CLOSED", closedLog)
 	for _, tc := range []struct {
 		name  string
 		run   []int
@@ -402,6 +409,8 @@ esac
 		{"malformed", nil, []string{"#10 not queued: cannot read its sub-issues:"}},
 		{"empty-output", nil, []string{"#10 not queued: cannot read its sub-issues:"}},
 		{"null", nil, []string{"#10 not queued: cannot read its sub-issues:"}},
+		{"all-closed", nil, []string{"#10 closed: all its sub-issues are closed"}},
+		{"close-fails", nil, []string{"closing it failed: gh: no permission"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SM_TEST_GH", tc.name)
@@ -418,6 +427,9 @@ esac
 				}
 			}
 		})
+	}
+	if closed, _ := os.ReadFile(closedLog); !strings.Contains(string(closed), "issue close 10 --reason completed") {
+		t.Errorf("close command = %q", closed)
 	}
 	t.Run("missing gh", func(t *testing.T) {
 		t.Setenv("PATH", t.TempDir())

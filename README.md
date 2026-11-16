@@ -19,7 +19,8 @@ Exits: `ready`, `gave-up`, `errored`, `split`, `escalated`, `stopped`.
     agent-sm allow [file]                       # allow lists suggested by the stats, as SM_ALLOW_FILE JSON
 
 Sub-issues: on the page, an issue with GitHub sub-issues shows its progress. Selecting it queues
-its open sub-issues in its place, one after another; the issue itself never runs. A sub-issue is
+its open sub-issues in its place, one after another; the issue itself never runs. If all its
+sub-issues are already closed, selecting it closes the issue as completed (not in service mode). A sub-issue is
 skipped when GitHub lists an open issue as blocking it, when its body's explicit dependency entries
 name an open issue, or when it has sub-issues of its own (select that one directly). Body dependencies
 are list entries under `Dependencies` (for example `- #5`) or lines starting with `Depends on` or

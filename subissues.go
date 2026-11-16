@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -98,6 +99,14 @@ func expand(repo string, n int) ([]int, []string) {
 			return err != nil || strings.TrimSpace(st) != "CLOSED"
 		})
 		return run, append(notes, why...)
+	}
+	// All sub-issues closed: the work is done, so the issue is closed too.
+	// shortcut: not in service mode, where the manager owns tracker writes; add a managed operation there if it is needed.
+	if len(subs) > 0 && !slices.ContainsFunc(subs, func(s subIssue) bool { return s.State == "open" }) {
+		if out, err := sh(repo, "gh", "issue", "close", strconv.Itoa(n), "--reason", "completed", "--comment", "Closed by agent-sm: all sub-issues are closed."); err != nil {
+			return nil, []string{fmt.Sprintf("#%d: all its sub-issues are closed, but closing it failed: %s", n, tail(strings.TrimSpace(out), 200))}
+		}
+		return nil, []string{fmt.Sprintf("#%d closed: all its sub-issues are closed", n)}
 	}
 	return pickSubIssues(n, subs, func(d int) bool {
 		st, err := sh(repo, "gh", "issue", "view", strconv.Itoa(d), "--json", "state", "--jq", ".state")
