@@ -108,16 +108,9 @@ func (t *agentTranscript) finish(result Out) error {
 	if t.provider == "copilot" {
 		messagesErr = t.copilotMessages()
 		if messagesErr != nil {
-			if result == Ok {
-				err = errors.Join(err, fmt.Errorf("Copilot messages: %w", messagesErr))
-			} else {
-				// A CLI that never starts may not create its native session log.
-				logEvent(map[string]any{"event": "transcript-incomplete", "path": t.dir, "detail": messagesErr.Error()})
-			}
+			// A CLI that never starts, or a stub, may not create its native session log.
+			logEvent(map[string]any{"event": "transcript-incomplete", "path": t.dir, "detail": messagesErr.Error()})
 		}
-	}
-	if err != nil {
-		result = Invalid
 	}
 	outcome := map[string]any{"outcome": result.String(), "finished": time.Now().UTC()}
 	if messagesErr != nil {

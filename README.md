@@ -78,8 +78,8 @@ in place; delete it before running the issue again.
 | `SM_EXTRA_ALLOW` | none | Claude-only allow entries added to every agent step. |
 | `SM_ADD_DIRS` | none | Comma-separated directories agents may read outside the repo. |
 | `SM_NOTES_DIR` | none | Operator notes added to dispatches: `all.md`, or `<role>.md` for one step. |
-| `SM_AUDIT` | off | Claude only: load every tool and bypass permissions (outward commands stay denied) to measure tool use. Not a sandbox. |
-| `SM_TRANSCRIPTS` | `false` | Opt-in local transcript saving for either provider (`true`/`false` or `1`/`0`). Independent of permission audit. |
+| `SM_AUDIT` | on for Claude (off in service mode and for Copilot) | Claude only: load every tool and bypass permissions (outward commands stay denied) to measure tool use. On by default while runs still error; `SM_AUDIT=0` or `"audit": false` turns it off. Not a sandbox. |
+| `SM_TRANSCRIPTS` | `true` | Local transcript saving for either provider (`true`/`false` or `1`/`0`), on by default while runs still error. A capture failure is logged and never fails the step. Independent of permission audit. |
 | `SM_GHIDRA_COPY` | `none` | Legacy-profile-only Ghidra project copy. |
 | `SM_EXPORT` | `~/rescue-re/export` | Legacy-profile-only export; generic runs do not inspect it. |
 | `SM_EPIC` | none | Epic that a follow-up issue joins (split, or three failed fix rounds). |
@@ -341,7 +341,7 @@ the complete history; large installations should compact/split this state before
 - `<scratch>/events.jsonl`: structured step results, errors (including CLI stderr), agent sessions and the exit. If a scratch directory is reused, the old event log is renamed to `events-<date>-<time>.jsonl`, not deleted.
 - The scratch root is durable, so run history survives a reboot. Agents also write probe output (traces, dumps) there; delete an issue's directory when you no longer need it.
 - `<scratch>/status.json`: the running session's live state. `<scratch>/run.log`: output of a run started from the page.
-- Optional transcripts: select **Save transcripts** before Run, set `"transcripts": true` in a profile, or use `SM_TRANSCRIPTS=1`. Each agent call/retry gets a separate private directory at `<scratch>/transcripts/<provider>-<step>-<unique>/`; its path is recorded in `events.jsonl`.
+- Transcripts are on by default. To turn them off, untick **Save transcripts** before Run, set `"transcripts": false` in a profile, or use `SM_TRANSCRIPTS=0`. Each agent call/retry gets a separate private directory at `<scratch>/transcripts/<provider>-<step>-<unique>/`; its path is recorded in `events.jsonl`.
   - `request.json`: exact CLI arguments (including prompts), working directory, schema and start time; no environment dump.
   - `stdout.log` / `stderr.log`: raw CLI streams captured before JSON validation, including malformed output. Claude's stdout includes its message/tool stream and native usage.
   - Copilot also retains `usage.json` and copies its native session events to `messages.jsonl` after the subprocess exits. This requires CLI support for `--session-id`, `--no-remote-export` and the documented local session-state layout. Session export to GitHub is disabled for these captured Copilot calls; no gist/share upload is requested.

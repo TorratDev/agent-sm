@@ -33,7 +33,8 @@ type Profile struct {
 	ClaudeAllow    map[string]string   `json:"claude_allow,omitempty"`
 	ClaudeExtra    string              `json:"claude_extra_allow,omitempty"`
 	Audit          bool                `json:"audit,omitempty"`
-	Transcripts    bool                `json:"transcripts,omitempty"`
+	Transcripts    bool                `json:"transcripts"`
+	auditSet       bool                // audit was chosen by the profile or SM_AUDIT, not defaulted
 }
 
 var settings = defaultProfile("copilot")
@@ -47,7 +48,8 @@ func finiteNonnegative(n float64) bool {
 
 func defaultProfile(provider string) Profile {
 	p := Profile{Provider: provider, SessionLimit: minCopilotCredits, RunLimit: 500, TimeoutMinutes: 60, Base: "origin/main",
-		Models: map[string]string{}, Commands: map[string][]string{}}
+		Models: map[string]string{}, Commands: map[string][]string{},
+		Transcripts: true} // on until runs stop erroring; turn off with "transcripts": false or SM_TRANSCRIPTS=0
 	if provider == "claude" {
 		p.SessionLimit, p.RunLimit = 2, 20
 	}
@@ -96,6 +98,9 @@ func decodeProfile(b []byte, provider string) (Profile, error) {
 	}
 	p := defaultProfile(provider)
 	err := decodeStrict(b, &p)
+	var keys map[string]json.RawMessage
+	json.Unmarshal(b, &keys)
+	_, p.auditSet = keys["audit"]
 	return p, err
 }
 
@@ -240,10 +245,15 @@ func loadProfile(path string) (Profile, error) {
 		p.ClaudeExtra = v
 	}
 	if v, ok := os.LookupEnv("SM_AUDIT"); ok {
-		p.Audit = v != ""
+		enabled, err := strconv.ParseBool(v)
+		p.Audit, p.auditSet = err != nil && v != "" || enabled, true // any other non-empty value keeps meaning on
 	}
-	if p.Provider != "claude" && (os.Getenv("SM_EXTRA_ALLOW") != "" || os.Getenv("SM_AUDIT") != "") {
+	if p.Provider != "claude" && (os.Getenv("SM_EXTRA_ALLOW") != "" || p.auditSet && p.Audit) {
 		return p, fmt.Errorf("SM_EXTRA_ALLOW and SM_AUDIT are Claude-only")
+	}
+	if !p.auditSet {
+		// On by default until runs stop erroring; service mode forbids it, Copilot has no audit.
+		p.Audit = p.Provider == "claude" && p.Management.Mode != "service"
 	}
 	return p, p.validateFor(managementCommand)
 }

@@ -571,7 +571,10 @@ func TestCopilotResult(t *testing.T) {
 
 func TestProviderResults(t *testing.T) {
 	for _, provider := range []string{"claude", "copilot"} {
-		for _, mode := range []string{"valid", "incomplete", "failure", "unknown-usage", "budget"} {
+		for _, mode := range []string{"valid", "incomplete", "failure", "unknown-usage", "budget", "resumed"} {
+			if mode == "resumed" && provider == "copilot" {
+				continue // Claude-only stream shape
+			}
 			t.Run(provider+"/"+mode, func(t *testing.T) {
 				dir := t.TempDir()
 				p := defaultProfile(provider)
@@ -606,6 +609,8 @@ else
   if [ "$FIXTURE_MODE" = "budget" ]; then subtype=error_max_budget_usd; fi
   result='{"verdict":"PASS","reasons":[]}'
   if [ "$FIXTURE_MODE" = "incomplete" ]; then result='{}'; fi
+  # A background task finishing resumes the session: an earlier, superseded result comes first.
+  if [ "$FIXTURE_MODE" = "resumed" ]; then echo '{"type":"result","subtype":"success","is_error":false,"num_turns":45,"total_cost_usd":0.04,"structured_output":{"verdict":"FAIL","reasons":["early"]}}'; fi
   printf '{"type":"result","subtype":"%s","is_error":false%s,"structured_output":%s}\n' "$subtype" "$cost" "$result"
 fi
 if [ "$FIXTURE_MODE" = "failure" ]; then exit 1; fi
@@ -633,8 +638,44 @@ if [ "$FIXTURE_MODE" = "failure" ]; then exit 1; fi
 				if mode == "unknown-usage" && c.CostUnknown != 1 {
 					t.Fatal("missing usage treated as free")
 				}
+				if mode == "resumed" && (r.Verdict != "PASS" || c.Cost != 0.1 || c.CostUnknown != 0) {
+					t.Fatalf("resumed session: verdict %q cost %v unknown %d; want last result, cumulative cost", r.Verdict, c.Cost, c.CostUnknown)
+				}
 			})
 		}
+	}
+}
+
+func TestAuditDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name, profile, env string
+		want, wantErr      bool
+	}{
+		{"claude default", `{"provider":"claude","checks":["true"]}`, "-", true, false},
+		{"copilot default", `{"provider":"copilot","checks":["true"]}`, "-", false, false},
+		{"profile off", `{"provider":"claude","checks":["true"],"audit":false}`, "-", false, false},
+		{"env off", `{"provider":"claude","checks":["true"]}`, "0", false, false},
+		{"env on copilot", `{"provider":"copilot","checks":["true"]}`, "1", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "profile.json")
+			writeFile(t, path, tc.profile, 0o600)
+			t.Setenv("SM_RESOLVED_CONFIG", "")
+			t.Setenv("SM_PROVIDER", "")
+			t.Setenv("SM_AUDIT", "")
+			if tc.env == "-" {
+				os.Unsetenv("SM_AUDIT")
+			} else {
+				t.Setenv("SM_AUDIT", tc.env)
+			}
+			p, err := loadProfile(path)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if err == nil && p.Audit != tc.want {
+				t.Fatalf("audit = %v, want %v", p.Audit, tc.want)
+			}
+		})
 	}
 }
 
@@ -761,7 +802,8 @@ if [ "$SM_TEST_MODE" = "failure" ]; then exit 1; fi
 				for attempt := 0; attempt < 2; attempt++ {
 					got := agent(c, Review, "exact prompt\nwith newline", new(any))
 					want := Ok
-					if mode == "malformed" || mode == "failure" || mode == "startup" || mode == "missing-messages" {
+					// missing-messages stays Ok: a capture gap is logged, never fails the step.
+					if mode == "malformed" || mode == "failure" || mode == "startup" {
 						want = Invalid
 					} else if mode == "timeout" {
 						want = Timeout
@@ -856,15 +898,13 @@ func TestTranscriptIOFailure(t *testing.T) {
 	eventsPath = filepath.Join(dir, "events.jsonl")
 	t.Cleanup(func() { eventsPath = oldEvents })
 	writeFile(t, filepath.Join(dir, "transcripts"), "not a directory", 0o600)
-	// A fake CLI must never start when requested capture cannot be opened.
+	// Capture is diagnostics: when it cannot be opened the step still runs, and the failure is logged.
 	marker := filepath.Join(dir, "started")
 	writeFile(t, filepath.Join(dir, "claude"), "#!/bin/sh\ntouch '"+marker+"'\n", 0o755)
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
-	if got := agent(&Ctx{Repo: dir, Scratch: dir}, Review, "test", new(any)); got != Invalid {
-		t.Fatalf("capture failure = %s", got)
-	}
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatal("CLI started without requested logging")
+	agent(&Ctx{Repo: dir, Scratch: dir}, Review, "test", new(any))
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("capture failure stopped the step from running")
 	}
 	b, err := os.ReadFile(eventsPath)
 	if err != nil || !strings.Contains(string(b), "transcript-error") {
@@ -888,8 +928,8 @@ func TestTranscriptIOFailure(t *testing.T) {
 		t.Fatal("capture write/close error was ignored")
 	}
 	b, err = os.ReadFile(filepath.Join(capture.dir, "result.json"))
-	if err != nil || !strings.Contains(string(b), `"outcome": "invalid"`) || !strings.Contains(string(b), "capture_error") {
-		t.Fatalf("capture failure recorded as success: %s, %v", b, err)
+	if err != nil || !strings.Contains(string(b), `"outcome": "ok"`) || !strings.Contains(string(b), "capture_error") {
+		t.Fatalf("capture failure not recorded beside the real outcome: %s, %v", b, err)
 	}
 }
 

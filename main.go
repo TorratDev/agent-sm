@@ -466,7 +466,6 @@ func claudeAgent(c *Ctx, state State, prompt string, out any, transcript *agentT
 	}
 	prog := &progress{c: c, state: state, unit: st.Unit, start: time.Now()}
 	var structured json.RawMessage
-	results := 0
 	usageReported := false
 	isErr, subtype := true, ""
 	var reader io.Reader = stdout
@@ -544,11 +543,14 @@ func claudeAgent(c *Ctx, state State, prompt string, out any, transcript *agentT
 				}
 			}
 		case ev.Type == "result":
-			results++
+			// A finished background task resumes the session and emits another result; the
+			// last one is the final answer. Its total_cost_usd is cumulative for the session,
+			// while num_turns, duration_ms and usage cover only that segment.
 			isErr, structured, subtype = ev.IsError, ev.Structured, ev.Subtype
-			st.Turns, st.DurationMs, st.Denials = ev.Turns, ev.Dur, len(ev.Denied)
-			if ev.Cost != nil && finiteNonnegative(*ev.Cost) {
-				st.CostUSD, usageReported = *ev.Cost, true
+			st.Turns, st.DurationMs, st.Denials = st.Turns+ev.Turns, st.DurationMs+ev.Dur, len(ev.Denied)
+			usageReported = ev.Cost != nil && finiteNonnegative(*ev.Cost)
+			if usageReported {
+				st.CostUSD = *ev.Cost
 			}
 			st.DeniedTools = map[string]int{}
 			for _, d := range ev.Denied {
@@ -557,8 +559,8 @@ func claudeAgent(c *Ctx, state State, prompt string, out any, transcript *agentT
 					st.DeniedSample = append(st.DeniedSample, d.Tool+" "+tail(string(d.Input), 200))
 				}
 			}
-			st.InputTokens, st.OutputTokens = ev.RawUsage.In, ev.RawUsage.Out
-			st.CacheCreation, st.CacheRead = ev.RawUsage.Create, ev.RawUsage.Read
+			st.InputTokens, st.OutputTokens = st.InputTokens+ev.RawUsage.In, st.OutputTokens+ev.RawUsage.Out
+			st.CacheCreation, st.CacheRead = st.CacheCreation+ev.RawUsage.Create, st.CacheRead+ev.RawUsage.Read
 		}
 	}
 	if sc.Err() != nil {
@@ -572,7 +574,7 @@ func claudeAgent(c *Ctx, state State, prompt string, out any, transcript *agentT
 	st.Killed = ctx.Err() != nil && len(structured) == 0
 	prog.flush(true)
 	c.Cost += st.CostUSD
-	st.UsageUnknown = results != 1 || !usageReported
+	st.UsageUnknown = !usageReported
 	if st.UsageUnknown {
 		c.CostUnknown++
 	}
@@ -583,13 +585,17 @@ func claudeAgent(c *Ctx, state State, prompt string, out any, transcript *agentT
 	}()
 	if runErr != nil && len(structured) == 0 {
 		logEvent(map[string]any{"event": "agent-error", "err": runErr.Error(), "stderr": tail(diagnostics.String(), 1500)})
+	} else if runErr == nil && (isErr || len(structured) == 0) && subtype != "error_max_budget_usd" {
+		// The CLI exited cleanly but gave no usable answer; say why instead of failing silently.
+		logEvent(map[string]any{"event": "invalid-result", "err": fmt.Sprintf("claude result subtype %q, is_error %v, structured output %v",
+			subtype, isErr, len(structured) > 0), "stderr": tail(diagnostics.String(), 1500)})
 	}
 	switch {
 	case subtype == "error_max_budget_usd":
 		return OverBudget
 	case ctx.Err() == context.DeadlineExceeded && len(structured) == 0:
 		return Timeout
-	case runErr != nil || isErr || results != 1 || len(structured) == 0:
+	case runErr != nil || isErr || len(structured) == 0:
 		return Invalid
 	}
 	st.Result = string(structured)

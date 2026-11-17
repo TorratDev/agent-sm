@@ -430,6 +430,7 @@ function renderQueue(q) {
   $("runBudget").textContent = "Run limit: " + (q.run_limit ? q.run_limit + " " + q.usage_unit : "unlimited");
   if (first || providerChanged) $("budget").value = q.session_limit;
   if (first) $("transcripts").checked = !!q.transcripts;
+  if (first || providerChanged) $("audit").checked = !!q.audit;
   $("audit").disabled = q.provider !== "claude";
   if ($("audit").disabled) $("audit").checked = false;
   const chips = [];

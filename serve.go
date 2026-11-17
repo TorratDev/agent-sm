@@ -508,7 +508,7 @@ type runRequest struct {
 func queueSnapshot(r *Runner, p Profile) map[string]any {
 	snap := r.Snapshot()
 	snap["provider"], snap["models"] = p.Provider, agentModelsFor(p)
-	snap["transcripts"] = p.Transcripts
+	snap["transcripts"], snap["audit"] = p.Transcripts, p.Audit
 	snap["session_limit"], snap["usage_unit"] = p.SessionLimit, p.unit()
 	snap["run_limit"], snap["min_session_limit"] = p.RunLimit, 0.01
 	if p.Provider == "copilot" {
