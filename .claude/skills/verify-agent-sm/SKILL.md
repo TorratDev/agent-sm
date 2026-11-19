@@ -79,7 +79,7 @@ Do not call it unless the user asked for a live run in this conversation.
 | Setup: path, picker button, profile, agent, apply | `#repoPath`, button `Browse folders`, `#language`, `#agent`, button `Use setup` |
 | Folder picker dialog | `dialog#folderPicker` (`Choose a repository folder`): `#folderPath`, buttons `Go`, `Home`, `Up`, `Cancel`, `Use this repository`; status `#folderStatus`; entries `#folderList button[data-path]` |
 | Issues: filter, refresh, cards, count | `#filter` (aria-label `Filter issues`), button `Refresh`, `#issueGrid input[data-n="<number>"]`, `#issueCount`, `#selCount` |
-| Run controls | `#publish`, `#budget`, `#transcripts`, `#audit`, `#stopBtn`, `#runBtn`, messages `#msg`, queue chips `#qstate` |
+| Run controls | `#publish`, `#budget`, `#transcripts`, `#audit`, `#stopBtn`, `#runBtn`, messages `#msg`, parallel runs `#lanes .lane[data-n="<n>"]` (click pins the run view; `#follow` unpins), finished chips `#recent button[data-n]`, header count `#jobs` |
 | Model inputs | `#models input[data-state="<state>"]` (aria-label `<state> model`) |
 | Run view | cards `#cards`, feed `#feed`, pipeline `#pipe button[data-s="<state>"]` (`aria-pressed`), detail `#detail`, steps `#steps tr`, `#stepCount`, denied `#deniedBox` / `#denied` |
 

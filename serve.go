@@ -295,6 +295,9 @@ func serve(issue, addr, repo string) error {
 				return
 			}
 			repoScratch := filepath.Dir(runScratch(repo, 0))
+			if n, err := strconv.Atoi(r.URL.Query().Get("issue")); err == nil && n > 0 {
+				repoScratch = runScratch(repo, n) // one issue's newest attempt, for a page watching parallel runs
+			}
 			scratch, iss = latestRun(repoScratch)
 			if scratch == "" {
 				scratch = repoScratch

@@ -4,28 +4,31 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agent-sm</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <style>
   :root {
-    --bg: #f4f5f8; --panel: #fff; --soft: #f0f2f6; --ink: #16181d; --mute: #667085; --line: #e2e5ec;
-    --accent: #4f46e5; --accent-soft: #eef0ff; --on-accent: #fff;
-    --ok: #15803d; --ok-soft: #e6f5eb; --bad: #c81e1e; --bad-soft: #fdecec; --warn: #a45a06; --warn-soft: #fcf1dd;
-    --term: #0f1117; --term-ink: #d7dbe4; --term-mute: #7c8597; --term-tool: #8ab4ff; --term-bad: #ff8a8a;
-    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 4px 14px rgba(16, 24, 40, .04);
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    /* signal box: grey-green enamel, lamp colours for state (cobalt = running) */
+    --bg: #e9ece6; --panel: #f8faf6; --soft: #eef1eb; --ink: #1d2622; --mute: #5d6a63; --line: #cdd3cc;
+    --accent: #2457c5; --accent-soft: #e2e9f8; --on-accent: #fff;
+    --ok: #1f7a3a; --ok-soft: #dfeee2; --bad: #b3261e; --bad-soft: #f6e1df; --warn: #9a5b00; --warn-soft: #f4e8d2;
+    --term: #18201c; --term-ink: #d6ded8; --term-mute: #7f8c85; --term-tool: #9db8f0; --term-bad: #f19a92;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0d0f13; --panel: #161920; --soft: #1e222b; --ink: #e7e9ee; --mute: #8b93a3; --line: #272c37;
-      --accent: #8b93ff; --accent-soft: #22254a; --on-accent: #0d0f13;
-      --ok: #4ade80; --ok-soft: #12301f; --bad: #f87171; --bad-soft: #3a1717; --warn: #fbbf24; --warn-soft: #3a2c0d;
-      --shadow: 0 1px 2px rgba(0, 0, 0, .4);
+      --bg: #141a17; --panel: #1b2320; --soft: #222b27; --ink: #e4eae5; --mute: #93a199; --line: #2f3a35;
+      --accent: #85a7f2; --accent-soft: #1f2a42; --on-accent: #141a17;
+      --ok: #6cc489; --ok-soft: #173022; --bad: #f08a82; --bad-soft: #3a1c1a; --warn: #e2ae55; --warn-soft: #362a12;
+      --term: #0f1412;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
   button, input, select, textarea { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .num { font-variant-numeric: tabular-nums; }
   .mute { color: var(--mute); }
   .ok { color: var(--ok); } .no { color: var(--bad); } .wait { color: var(--warn); }
 
@@ -33,9 +36,9 @@
   .top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
   .top-in { max-width: 1180px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .brand { font-weight: 700; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
-  .logo { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; }
-  .logo::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--on-accent); }
-  .tag { font-family: var(--mono); font-size: 12px; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; }
+  .logo { width: 14px; height: 26px; border-radius: 7px; background: var(--ink); display: grid; place-items: center; } /* a three-lamp signal head */
+  .logo::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 -7px 0 color-mix(in srgb, var(--bg) 22%, transparent), 0 7px 0 color-mix(in srgb, var(--bg) 22%, transparent); }
+  .tag { font-size: 13px; font-weight: 600; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 0 7px; }
   .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px 2px 8px; font-size: 12px; font-weight: 600; background: var(--soft); color: var(--mute); }
   .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .pill.run { background: var(--accent-soft); color: var(--accent); } .pill.run::before { animation: pulse 1.2s ease-in-out infinite; }
@@ -46,16 +49,16 @@
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
   main { max-width: 1180px; margin: 0 auto; padding: 8px 20px 60px; }
-  section { margin-top: 26px; }
-  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-  h2 { font-size: 15px; margin: 0; letter-spacing: -.01em; }
+  section { margin-top: 32px; }
+  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0; }
   .head .count { font-size: 12px; color: var(--mute); }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
 
   /* controls */
-  .field { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); min-width: 0; }
+  .field { padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); min-width: 0; }
   input.field::placeholder { color: var(--mute); }
-  .btn { padding: 7px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; font-weight: 600; transition: background .12s, border-color .12s; }
+  .btn { padding: 7px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; font-weight: 600; }
   .btn:hover:not(:disabled) { background: var(--soft); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .btn.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
@@ -72,14 +75,14 @@
   /* issues */
   .issues { display: none; } .issues.on { display: block; }
   .igrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; max-height: 372px; overflow: auto; padding: 2px; }
-  .icard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; box-shadow: var(--shadow); transition: border-color .12s, transform .12s; }
-  .icard:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .icard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .icard:hover { border-color: var(--accent); }
   .icard input { position: absolute; opacity: 0; pointer-events: none; }
   .icard:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .icard:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
-  .icard.busy { cursor: default; opacity: .75; } .icard.busy:hover { transform: none; border-color: var(--line); }
+  .icard.busy { cursor: default; opacity: .75; } .icard.busy:hover { border-color: var(--line); }
   .i-top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--mute); }
-  .i-num { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+  .i-num { font-weight: 600; color: var(--ink); }
   .check { margin-left: auto; width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--line); display: grid; place-items: center; background: var(--panel); }
   .icard:has(input:checked) .check { background: var(--accent); border-color: var(--accent); }
   .icard:has(input:checked) .check::after { content: ""; width: 9px; height: 5px; border: 2px solid var(--on-accent); border-top: 0; border-right: 0; transform: rotate(-45deg) translateY(-1px); }
@@ -93,15 +96,38 @@
   .runbar label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--mute); }
   .runbar input[type=number] { width: 74px; }
   .queue { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; font-size: 12px; align-items: center; }
+  button.chip { cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+  button.chip[aria-pressed=true] { outline: 2px solid currentColor; outline-offset: 1px; }
+
+  /* parallel runs: one lane per job, one track segment per pipeline state */
+  .lanes { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  .lane { --edge: var(--accent); position: relative; overflow: hidden; text-align: left; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 13px 21px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; min-width: 0; }
+  .lane::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--edge); }
+  .lane:hover { border-color: var(--edge); }
+  .lane[aria-pressed=true] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .lane.warn { --edge: var(--warn); } .lane.good { --edge: var(--ok); } .lane.bad { --edge: var(--bad); }
+  .lane.queued { --edge: var(--line); cursor: default; background: transparent; border-style: dashed; }
+  .lane.queued:hover { border-color: var(--line); }
+  .l-top, .l-foot { display: flex; align-items: center; gap: 8px; font-size: 12px; min-width: 0; }
+  .l-top .i-num { font-size: 20px; font-weight: 700; line-height: 1; letter-spacing: -.01em; }
+  .l-foot .grow { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .l-foot .cmd { font-family: var(--mono); font-size: 11px; }
+  .l-title { font-weight: 500; font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 18px; }
+  .track { display: flex; gap: 2px; }
+  .seg { flex: 1; height: 10px; border-radius: 2px; background: var(--soft); box-shadow: inset 0 0 0 1px var(--line); }
+  .seg.visited { background: var(--ok); box-shadow: none; }
+  .seg.failed { background: var(--bad); box-shadow: none; }
+  .seg.stale { background: var(--warn); box-shadow: none; }
+  .seg.live { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); animation: pulse 1.2s ease-in-out infinite; }
   #msg { color: var(--bad); font-size: 13px; margin-top: 8px; }
   #note { color: var(--mute); font-size: 13px; margin-top: 8px; }
 
   /* run summary */
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .stat { padding: 12px 14px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px 40px; padding: 2px 0 4px; }
+  .stat { min-width: 0; }
   .stat span { display: block; font-size: 12px; color: var(--mute); }
-  .stat b { display: block; font-size: 20px; letter-spacing: -.02em; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  details.feed { margin-top: 10px; background: var(--term); color: var(--term-ink); border-radius: 12px; overflow: hidden; }
+  .stat b { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  details.feed { margin-top: 14px; background: var(--term); color: var(--term-ink); border-radius: 8px; overflow: hidden; }
   details.feed summary { cursor: pointer; padding: 9px 14px; font: 12px var(--mono); color: var(--term-mute); }
   #feed { font: 12px/1.6 var(--mono); max-height: 280px; overflow: auto; padding: 0 14px 12px; }
   #feed div { white-space: pre-wrap; word-break: break-word; }
@@ -109,10 +135,11 @@
   #feed .tool { color: var(--term-tool); } #feed .error { color: var(--term-bad); }
 
   /* pipeline */
-  .pipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 18px; }
-  .node { position: relative; text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 11px 12px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; box-shadow: var(--shadow); transition: border-color .12s, transform .12s; }
-  .node:hover { transform: translateY(-1px); border-color: var(--accent); }
-  .node:not(:last-child)::after { content: ""; position: absolute; right: -13px; top: 50%; width: 7px; height: 7px; border-top: 2px solid var(--line); border-right: 2px solid var(--line); transform: translateY(-50%) rotate(45deg); }
+  .pipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 18px; overflow: hidden; padding: 4px 0 4px 4px; margin: -4px 0 -4px -4px; } /* clips the connector after a row's last node */
+  .node { position: relative; text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 11px 12px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .node:hover { border-color: var(--accent); }
+  .node:not(:last-child)::after { content: ""; position: absolute; right: -19px; top: 50%; width: 18px; height: 2px; background: var(--line); }
+  .node.visited:not(:last-child)::after { background: var(--ok); opacity: .5; }
   .node[aria-pressed=true] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .n-top { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mute); }
   .dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--line); }
@@ -122,12 +149,12 @@
   .node.live { border-color: var(--accent); }
   .node b { font-size: 14px; }
   .node .res { font-size: 12px; font-weight: 600; min-height: 18px; }
-  .node .cost { font-size: 11px; color: var(--mute); font-family: var(--mono); min-height: 16px; }
+  .node .cost { font-size: 12px; color: var(--mute); min-height: 16px; }
   .bar { height: 4px; border-radius: 2px; background: var(--soft); overflow: hidden; margin-top: 4px; }
   .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
   #detail { margin-top: 12px; padding: 14px 16px; }
   #detail h3 { margin: 0 0 2px; font-size: 15px; }
-  .sub { font-size: 12px; color: var(--mute); margin: 12px 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+  .sub { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
   .outs { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--mute); background: var(--panel); white-space: nowrap; }
   .chip.taken { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
@@ -136,7 +163,7 @@
   .chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; font-weight: 600; }
   .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; font-weight: 600; }
   .chip.run { background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 600; }
-  pre { font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--soft); border-radius: 8px; padding: 10px 12px; margin: 0; max-height: 340px; overflow: auto; }
+  pre { font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--soft); border-radius: 6px; padding: 10px 12px; margin: 0; max-height: 340px; overflow: auto; }
 
   /* steps */
   .tablewrap { overflow-x: auto; }
@@ -144,8 +171,8 @@
   th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   tr:last-child td { border-bottom: 0; }
   th { color: var(--mute); font-weight: 500; font-size: 12px; background: var(--soft); }
-  th:first-child { border-top-left-radius: 12px; } th:last-child { border-top-right-radius: 12px; }
-  td.r, th.r { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  th:first-child { border-top-left-radius: 8px; } th:last-child { border-top-right-radius: 8px; }
+  td.r, th.r { text-align: right; }
   tbody tr:hover { background: var(--soft); }
   .costcell { position: relative; }
   .costcell i { position: absolute; left: 12px; right: 12px; bottom: 4px; height: 3px; border-radius: 2px; background: linear-gradient(to left, var(--accent) var(--w, 0%), transparent 0); opacity: .7; }
@@ -164,6 +191,7 @@
   <div class="brand"><span class="logo"></span>agent-sm</div>
   <span class="tag" id="issue">no run</span>
   <span class="pill" id="pill">idle</span>
+  <span class="pill run" id="jobs" hidden></span>
   <div class="grow mute" id="line">waiting for data...</div>
   <b class="num" id="cost"></b>
 </div></header>
@@ -212,11 +240,16 @@
       <button class="btn primary" id="runBtn" disabled>Run</button>
     </div>
     <div class="panel runbar" id="modelBar"><b>Models</b><span class="mute" style="font-size:12px">per step, for the runs you start next</span><span class="grow"></span><span id="models" style="display:contents"></span></div>
-    <div class="queue" id="qstate"></div>
+  </section>
+
+  <section id="lanesBox" hidden>
+    <div class="head"><h2>Running now</h2><span class="count" id="laneCount"></span></div>
+    <div class="lanes" id="lanes"></div>
+    <div class="queue" id="recent"></div>
   </section>
 
   <section>
-    <div class="head"><h2>Current run</h2></div>
+    <div class="head"><h2 id="runTitle">Newest run</h2><span class="count" id="runHint"></span><span class="grow"></span><button class="btn" id="follow" type="button" hidden>Follow newest run</button></div>
     <div class="stats" id="cards"></div>
     <details class="feed" id="feedBox">
       <summary id="feedSum">Agent activity</summary>
@@ -244,7 +277,7 @@
 const TOKEN = "__TOKEN__";
 const DEFAULT_REPO = __REPO__;
 const DEFAULT_AGENT = __AGENT__;
-let OLD = [], QERR = "", EDGES = [], ISSUES = [], QUEUE = {}, SEL = new Set(), CAN_RUN = false, BUSY = false, RUNNING = false, PICKED = null, TIMER;
+let OLD = [], QERR = "", EDGES = [], ISSUES = [], QUEUE = {}, SEL = new Set(), CAN_RUN = false, BUSY = false, RUNNING = false, PICKED = null, TIMER, WATCH = null, LANES = {};
 let SELECTED_REPO = "", SELECTED_LANGUAGE = "auto", SELECTED_AGENT = DEFAULT_AGENT;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -262,8 +295,8 @@ function age(iso) {
   return m < 60 ? Math.max(1, Math.round(m)) + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago";
 }
 
-function render(data) {
-  $("issue").textContent = data.issue ? "#" + data.issue : "no run";
+// summarize reads one run's events and status.json: what ran, what runs now, what it cost.
+function summarize(data) {
   const events = data.events || [], st = data.status;
   const exitEv = events.filter(e => e.exit).pop();
   const provider = (exitEv || {}).provider || (events.find(e => e.provider) || {}).provider || (st || {}).provider || "claude";
@@ -299,14 +332,30 @@ function render(data) {
   const live = exitEv ? null : (session ? st.state : (nextEdge ? nextEdge.to : (st ? st.state : null)));
   const idleMin = Math.floor((Date.now() - Math.max(stT, lastT)) / 60000);
   const stale = !exitEv && live && idleMin >= 10; // a killed process leaves no exit event
-  RUNNING = !!live && !stale;
-
-  const pill = $("pill");
-  pill.className = "pill " + (exitEv ? exitCls(exitEv.exit) : stale ? "warn" : live ? "run" : "");
-  pill.textContent = exitEv ? exitEv.exit : stale ? "no update for " + idleMin + " min" : live ? live : "idle";
   const usageEvent = exitEv || lastStep || {};
   const cost = usageEvent.usage ?? usageEvent.cost_usd ?? 0;
   const unknown = usageEvent.sessions_with_unknown_cost || usageEvent.usage_unknown;
+  const pillCls = exitEv ? exitCls(exitEv.exit) : stale ? "warn" : live ? "run" : "";
+  const pillText = exitEv ? exitEv.exit : stale ? "no update for " + idleMin + " min" : live ? live : "idle";
+  return { st, exitEv, usage, stepUsage, steps, per, taken, total, session, lastStep, live, stale, cost, unknown, pillCls, pillText };
+}
+
+// track draws one segment per pipeline state: done, failed, running or not reached.
+function track(sum) {
+  return [...new Set(EDGES.map(e => e.from))].map(name => {
+    const p = sum.per[name], failed = p && BADOUT.includes(p.last.out) && sum.live !== name;
+    const cls = sum.live === name ? (sum.stale ? "stale" : "live") : failed ? "failed" : p ? "visited" : "";
+    return `<i class="seg ${cls}" title="${name}${p ? ": " + p.last.out : ""}"></i>`;
+  }).join("");
+}
+
+function render(data) {
+  $("issue").textContent = data.issue ? "#" + data.issue : "no run";
+  const { st, exitEv, usage, stepUsage, steps, per, taken, total, session, lastStep, live, stale, cost, unknown, pillCls, pillText } = summarize(data);
+  RUNNING = !!live && !stale;
+  const pill = $("pill");
+  pill.className = "pill " + pillCls;
+  pill.textContent = pillText;
   $("cost").textContent = data.issue ? usage(cost) + (unknown ? " + unknown" : "") : "";
   document.title = (data.issue ? "#" + data.issue + " " : "") + (exitEv ? exitEv.exit : (live || "idle")) + " - agent-sm";
 
@@ -322,7 +371,7 @@ function render(data) {
   if (session && !stale) { cards.push(["This step", sec(st.elapsed_s), ""]); cards.push(["Tool calls", st.tool_telemetry_available === false ? "unknown" : st.tool_calls, ""]); }
   cards.push(["Steps run", steps.length, ""]);
   cards.push(["Run usage", usage(cost) + (unknown ? " + unknown" : ""), ""]);
-  put("cards", cards.map(c => `<div class="panel stat"><span>${c[0]}</span><b class="${c[2]}">${c[1]}</b></div>`).join(""));
+  put("cards", cards.map(c => `<div class="stat"><span>${c[0]}</span><b class="${c[2]}">${c[1]}</b></div>`).join(""));
 
   const names = [...new Set(EDGES.map(e => e.from))];
   const sel = PICKED || live || (lastStep && lastStep.state) || names[0];
@@ -334,7 +383,7 @@ function render(data) {
       <span class="n-top"><span class="dot"></span>${live === name ? "running" : (p.visits ? "ran " + p.visits + "x" : "not run")}</span>
       <b>${name}</b>
       <span class="res ${p.last ? outCls(p.last.out) : ""}">${p.last ? p.last.out : ""}</span>
-      <span class="cost">${p.cost ? usage(p.cost) + " · " + share + "%" : ""}${p.unknown ? " + unknown" : ""}</span>
+      <span class="cost">${p.cost ? usage(p.cost) + " (" + share + "%)" : ""}${p.unknown ? " + unknown" : ""}</span>
       <span class="bar"><i style="width:${share}%"></i></span>
     </button>`;
   }).join(""));
@@ -346,7 +395,7 @@ function render(data) {
   }).join("");
   const res = p.last && p.last.s && p.last.s.result;
   put("detail", sel ? `<h3>${sel}</h3>
-    <div class="mute">${p.model ? "agent step on " + esc(p.model) : (p.visits ? "program step, no agent" : "has not run in this run")}${p.visits ? " · ran " + p.visits + "x" : ""}${p.cost ? " · " + usage(p.cost) : ""}${p.unknown ? " + unknown" : ""}</div>
+    <div class="mute">${p.model ? "agent step on " + esc(p.model) : (p.visits ? "program step, no agent" : "has not run in this run")}${p.visits ? ", ran " + p.visits + "x" : ""}${p.cost ? ", " + usage(p.cost) : ""}${p.unknown ? " + unknown" : ""}</div>
     <div class="sub">Where each result leads</div><div class="outs">${chips}</div>
     ${res ? `<div class="sub">Last result</div><pre>${esc(pretty(res))}</pre>` : ""}` : '<div class="empty">No run yet.</div>');
 
@@ -436,11 +485,7 @@ function renderQueue(q) {
   if (first || providerChanged) $("audit").checked = !!q.audit;
   $("audit").disabled = q.provider !== "claude";
   if ($("audit").disabled) $("audit").checked = false;
-  const chips = [];
-  (q.running || []).forEach(j => chips.push(`<span class="chip run" title="${esc(j.branch || "")}">running #${j.issue}</span>`));
-  (q.queued || []).forEach(j => chips.push(`<span class="chip warn">queued #${j.issue}</span>`));
-  (q.history || []).slice(-6).reverse().forEach(j => chips.push(`<span class="chip ${exitCls(j.exit)}" title="${esc([j.branch, j.err].filter(Boolean).join(" · "))}">#${j.issue} ${esc(j.exit || "failed")}</span>`));
-  put("qstate", chips.length ? '<span class="mute">Queue</span>' + chips.join("") : "");
+  renderLanes(q);
   // The last finished job's failure, until the same issue is running again.
   const last = (q.history || []).slice(-1)[0];
   if (last && last.err && !(q.running || []).some(j => j.issue === last.issue)) $("msg").textContent = QERR = "#" + last.issue + ": " + last.err;
@@ -448,12 +493,61 @@ function renderQueue(q) {
   $("stopBtn").disabled = !BUSY && !(q.queued || []).length;
   renderIssues();
 }
+// renderLanes shows every running job side by side, then the queued ones and the last finished.
+function renderLanes(q) {
+  const running = q.running || [], queued = q.queued || [];
+  const title = n => esc((ISSUES.find(i => i.number === n) || {}).title || "");
+  const empty = track({ per: {}, live: null });
+  const lanes = running.map(j => {
+    const s = LANES[j.issue], starting = !s || !!s.exitEv; // an exit event here is the previous attempt's
+    const line = starting ? "starting in its worktree"
+      : s.session && s.st.last_tool ? s.st.last_tool + (s.st.last_command ? " (" + s.st.last_command + ")" : "")
+      : s.live ? s.live + " is running" : "waiting for the first step";
+    const cls = starting ? "run" : s.pillCls;
+    return `<button class="lane ${cls}" type="button" data-n="${j.issue}" aria-pressed="${WATCH === j.issue}" title="${esc(j.branch || "")}">
+      <span class="l-top"><b class="i-num">#${j.issue}</b><span class="pill ${cls}">${esc(starting ? "starting" : s.pillText)}</span><span class="grow"></span><span class="num mute">${j.started ? sec(Math.max(0, Math.round((Date.now() - Date.parse(j.started)) / 1000))) : ""}</span></span>
+      <span class="l-title">${title(j.issue)}</span>
+      <span class="track">${starting ? empty : track(s)}</span>
+      <span class="l-foot"><span class="grow mute${!starting && s.session && s.st.last_tool ? " cmd" : ""}">${esc(line)}</span>${starting ? "" : `<b class="num">${s.usage(s.cost)}${s.unknown ? " +?" : ""}</b>`}</span>
+    </button>`;
+  });
+  queued.forEach(j => lanes.push(`<div class="lane queued">
+      <span class="l-top"><b class="i-num">#${j.issue}</b><span class="pill warn">queued</span></span>
+      <span class="l-title">${title(j.issue)}</span>
+      <span class="track">${empty}</span>
+      <span class="l-foot mute">waiting for a free slot</span>
+    </div>`));
+  const done = (q.history || []).slice(-6).reverse().map(j => `<button class="chip ${exitCls(j.exit)}" type="button" data-n="${j.issue}" aria-pressed="${WATCH === j.issue}" title="${esc([j.branch, j.err].filter(Boolean).join("\n"))}">#${j.issue} ${esc(j.exit || "failed")}</button>`).join("");
+  $("lanesBox").hidden = !lanes.length && !done;
+  $("laneCount").textContent = running.length + " running, " + queued.length + " waiting for a slot, up to " + (q.concurrency || 1) + " at once";
+  $("jobs").hidden = !running.length;
+  $("jobs").textContent = running.length + " running";
+  put("lanes", lanes.join(""));
+  put("recent", done ? '<span class="mute">Finished</span>' + done : "");
+}
 async function pollQueue() {
   if (!SELECTED_REPO) return;
   const q = await (await fetch(selectionURL("/api/queue"))).json();
   if (q.can_run && !CAN_RUN) { CAN_RUN = true; $("issuesPanel").classList.add("on"); loadIssues(false); }
-  if (q.can_run) renderQueue(q);
+  if (!q.can_run) return;
+  const nums = (q.running || []).map(j => j.issue);
+  const got = await Promise.all(nums.map(n => fetch(stateURL(n)).then(r => r.json()).catch(() => null)));
+  LANES = {};
+  nums.forEach((n, i) => { if (got[i]) LANES[n] = summarize(got[i]); });
+  renderQueue(q);
 }
+const stateURL = n => SELECTED_REPO ? selectionURL("/api/state") + (n ? "&issue=" + n : "") : "/api/state";
+function watch(n) {
+  WATCH = n && n !== WATCH ? n : null; PICKED = null;
+  $("runTitle").textContent = WATCH ? "Run #" + WATCH : "Newest run";
+  $("runHint").textContent = WATCH ? "Pinned. The runs above keep going." : "";
+  $("follow").hidden = !WATCH;
+  if (QUEUE.provider) renderLanes(QUEUE);
+  tick();
+}
+$("lanes").addEventListener("click", e => { const b = e.target.closest("[data-n]"); if (b) watch(Number(b.dataset.n)); });
+$("recent").addEventListener("click", e => { const b = e.target.closest("[data-n]"); if (b) watch(Number(b.dataset.n)); });
+$("follow").addEventListener("click", () => watch(null));
 function selectionURL(path) {
   const params = new URLSearchParams({ repo: SELECTED_REPO, language: SELECTED_LANGUAGE, provider: SELECTED_AGENT });
   return path + "?" + params;
@@ -545,7 +639,7 @@ $("runBtn").addEventListener("click", async () => {
     SEL.clear(); PICKED = null;
     const body = { issues, repo: SELECTED_REPO, language: SELECTED_LANGUAGE, publish, provider: SELECTED_AGENT, audit: $("audit").checked, transcripts: $("transcripts").checked, budget: $("budget").value, concurrency: Math.min(16, Math.max(1, parseInt($("parallel").value, 10) || 1)), models: chosenModels() };
     const q = await post("/api/run", body);
-    renderQueue(q); $("note").textContent = (q.notes || []).join(" · "); tick();
+    renderQueue(q); $("note").textContent = (q.notes || []).join(" "); tick();
     if ($("note").textContent) loadIssues(true); // a note can mean an issue was closed
   }
   catch (e) { $("msg").textContent = "Cannot start: " + e.message; }
@@ -559,7 +653,7 @@ async function tick() {
   clearTimeout(TIMER);
   try {
     if (!EDGES.length) EDGES = await (await fetch("/api/graph")).json();
-    render(await (await fetch(SELECTED_REPO ? selectionURL("/api/state") : "/api/state")).json());
+    render(await (await fetch(stateURL(WATCH))).json());
     await pollQueue();
   } catch (e) { $("line").textContent = "cannot reach the server: " + e; }
   TIMER = setTimeout(tick, RUNNING || BUSY ? 2000 : 10000); // nothing changes fast when no run is live
