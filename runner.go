@@ -174,7 +174,12 @@ func (s *slots) acquire() {
 func (s *slots) release() { s.mu.Lock(); s.used--; s.free.Broadcast(); s.mu.Unlock() }
 
 // resize changes the bound; lowering it lets running jobs finish and holds new ones back.
-func (s *slots) resize(limit int) { s.mu.Lock(); s.limit = max(1, limit); s.free.Broadcast(); s.mu.Unlock() }
+func (s *slots) resize(limit int) {
+	s.mu.Lock()
+	s.limit = max(1, limit)
+	s.free.Broadcast()
+	s.mu.Unlock()
+}
 
 func (s *slots) size() int {
 	if s == nil {
