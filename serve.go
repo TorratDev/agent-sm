@@ -254,7 +254,7 @@ func serve(issue, addr, repo string) error {
 	}
 	runners := map[string]*Runner{}
 	var runnersMu sync.Mutex
-	slots := make(chan struct{}, max(1, settings.Concurrency)) // jobs running at once, across all repositories
+	slots := newSlots(settings.Concurrency) // jobs running at once, across all repositories
 	runnerFor := func(path string) (*Runner, error) {
 		if path == "" {
 			path = defaultRepo
@@ -404,7 +404,7 @@ func serve(issue, addr, repo string) error {
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
 		decoder.DisallowUnknownFields()
 		if decoder.Decode(&req) != nil || decoder.Decode(new(any)) != io.EOF || len(req.Issues) == 0 || len(req.Issues) > 20 ||
-			(req.Publish != "" && req.Publish != levelPR) || (req.Budget != "" && !budgetRe.MatchString(req.Budget)) {
+			(req.Publish != "" && req.Publish != levelPR) || req.Concurrency < 0 || req.Concurrency > maxConcurrency || (req.Budget != "" && !budgetRe.MatchString(req.Budget)) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
@@ -437,6 +437,9 @@ func serve(issue, addr, repo string) error {
 						Models: req.Models, Provider: profile.Provider, Profile: &profile})
 				}
 			}
+		}
+		if req.Concurrency > 0 && run.slots != nil { // the page's choice applies to the whole server
+			run.slots.resize(req.Concurrency)
 		}
 		run.Enqueue(jobs)
 		snap := queueSnapshot(run, profile)
@@ -508,6 +511,7 @@ type runRequest struct {
 	Budget      string            `json:"budget"`
 	Models      map[string]string `json:"models"`
 	Provider    string            `json:"provider"`
+	Concurrency int               `json:"concurrency,omitempty"`
 }
 
 func queueSnapshot(r *Runner, p Profile) map[string]any {

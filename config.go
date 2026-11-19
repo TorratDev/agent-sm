@@ -42,6 +42,7 @@ var settings = defaultProfile("copilot")
 var managementCommand bool
 
 const minCopilotCredits = 100
+const maxConcurrency = 16
 
 func finiteNonnegative(n float64) bool {
 	return !math.IsNaN(n) && !math.IsInf(n, 0) && n >= 0
@@ -317,8 +318,8 @@ func (p Profile) validateFor(managementOnly bool) error {
 			return fmt.Errorf("limits and timeout must be finite and nonnegative")
 		}
 	}
-	if p.Concurrency < 0 || p.Concurrency > 16 {
-		return fmt.Errorf("concurrency must be between 0 and 16")
+	if p.Concurrency < 0 || p.Concurrency > maxConcurrency {
+		return fmt.Errorf("concurrency must be between 0 and %d", maxConcurrency)
 	}
 	if p.SessionLimit == 0 || p.TimeoutMinutes == 0 {
 		return fmt.Errorf("session_limit and timeout_minutes must be positive")

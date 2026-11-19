@@ -780,7 +780,7 @@ printf '{"exit":"%s"}\n' "$exit" >> "$SM_EVENTS"
 	p := defaultProfile("copilot")
 	p.Base = "main"
 	useProfile(t, p)
-	r := &Runner{repo: repo, self: self, stats: filepath.Join(dir, "stats.jsonl"), slots: make(chan struct{}, 3)}
+	r := &Runner{repo: repo, self: self, stats: filepath.Join(dir, "stats.jsonl"), slots: newSlots(3)}
 	r.Enqueue([]Job{{Issue: 1, Profile: &p}, {Issue: 2, Profile: &p}, {Issue: 1, Profile: &p}})
 	deadline := time.Now().Add(30 * time.Second)
 	for {
@@ -808,5 +808,28 @@ printf '{"exit":"%s"}\n' "$exit" >> "$SM_EVENTS"
 	}
 	if m, _ := filepath.Glob(filepath.Join(repo, "mine-*")); len(m) != 0 {
 		t.Errorf("a job wrote into the main checkout: %v", m)
+	}
+}
+
+func TestSlotsResize(t *testing.T) {
+	s := newSlots(1)
+	s.acquire()
+	got := make(chan struct{})
+	go func() { s.acquire(); close(got) }()
+	select {
+	case <-got:
+		t.Fatal("second job started with one slot")
+	case <-time.After(50 * time.Millisecond):
+	}
+	s.resize(2)
+	select {
+	case <-got:
+	case <-time.After(time.Second):
+		t.Fatal("raising the limit did not start the waiting job")
+	}
+	s.resize(1) // lowering holds new jobs until enough finish
+	s.release()
+	if s.used != 1 || s.size() != 1 {
+		t.Fatalf("used %d, size %d", s.used, s.size())
 	}
 }

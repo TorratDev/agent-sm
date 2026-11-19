@@ -205,6 +205,7 @@
       <span id="provider"></span>
       <label>Limit per step <span id="budgetUnit"></span> <input class="field" type="number" id="budget" value="2" min="0.01" step="0.01" required></label>
       <span class="mute" id="runBudget"></span>
+      <label title="How many queued issues run at once, each in its own worktree. Applies to every queue on this server.">In parallel <input class="field" type="number" id="parallel" value="1" min="1" max="16" step="1" style="width:4.5em"></label>
       <label title="Save prompts, responses and available tool messages locally. May contain sensitive code or output."><input type="checkbox" id="transcripts"> Save transcripts</label>
       <label title="Claude only: bypass permission approvals to measure tool use. Not transcript logging."><input type="checkbox" id="audit"> permission audit</label>
       <button class="btn danger" id="stopBtn" disabled>Stop</button>
@@ -431,6 +432,7 @@ function renderQueue(q) {
   $("runBudget").textContent = "Run limit: " + (q.run_limit ? q.run_limit + " " + q.usage_unit : "unlimited");
   if (first || providerChanged) $("budget").value = q.session_limit;
   if (first) $("transcripts").checked = !!q.transcripts;
+  if (first) $("parallel").value = q.concurrency || 1;
   if (first || providerChanged) $("audit").checked = !!q.audit;
   $("audit").disabled = q.provider !== "claude";
   if ($("audit").disabled) $("audit").checked = false;
@@ -541,7 +543,7 @@ $("runBtn").addEventListener("click", async () => {
   $("msg").textContent = $("note").textContent = "";
   try {
     SEL.clear(); PICKED = null;
-    const body = { issues, repo: SELECTED_REPO, language: SELECTED_LANGUAGE, publish, provider: SELECTED_AGENT, audit: $("audit").checked, transcripts: $("transcripts").checked, budget: $("budget").value, models: chosenModels() };
+    const body = { issues, repo: SELECTED_REPO, language: SELECTED_LANGUAGE, publish, provider: SELECTED_AGENT, audit: $("audit").checked, transcripts: $("transcripts").checked, budget: $("budget").value, concurrency: Math.min(16, Math.max(1, parseInt($("parallel").value, 10) || 1)), models: chosenModels() };
     const q = await post("/api/run", body);
     renderQueue(q); $("note").textContent = (q.notes || []).join(" · "); tick();
     if ($("note").textContent) loadIssues(true); // a note can mean an issue was closed

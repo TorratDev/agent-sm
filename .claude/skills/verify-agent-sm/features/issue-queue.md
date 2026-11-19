@@ -1,6 +1,6 @@
 # Issue queue
 
-For the selected repository the page lists open GitHub issues, lets the user filter and select them, set publish level, per-step limit and models, and start or stop runs. Runs start as slots free up (`concurrency`, default 1), each in its own worktree; an issue with sub-issues is replaced by its runnable sub-issues.
+For the selected repository the page lists open GitHub issues, lets the user filter and select them, set publish level, per-step limit and models, and start or stop runs. Runs start as slots free up (the `In parallel` field, `#parallel`, default from `SM_CONCURRENCY` or 1), each in its own worktree; an issue with sub-issues is replaced by its runnable sub-issues.
 
 ## Sub-features
 

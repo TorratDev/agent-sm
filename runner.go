@@ -42,7 +42,7 @@ type Job struct {
 // the free slots, which every repository's runner shares; one issue never runs twice at once.
 type Runner struct {
 	repo, self, stats string
-	slots             chan struct{} // shared across runners; nil means one job at a time
+	slots             *slots // shared across runners; nil means one job at a time
 	mu                sync.Mutex
 	idle              *sync.Cond // signalled when a job finishes
 	wt                sync.Mutex // git worktree add/fetch in one repository, one at a time
@@ -79,7 +79,7 @@ func (r *Runner) Enqueue(jobs []Job) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.slots == nil {
-		r.slots = make(chan struct{}, 1)
+		r.slots = newSlots(1)
 	}
 	if r.idle == nil {
 		r.idle = sync.NewCond(&r.mu)
@@ -115,12 +115,12 @@ func (r *Runner) loop() {
 			return
 		}
 		r.mu.Unlock()
-		r.slots <- struct{}{}
+		r.slots.acquire()
 		r.mu.Lock()
 		i := r.next()
 		if i < 0 { // Stop emptied the queue, or a job for the same issue started meanwhile
 			r.mu.Unlock()
-			<-r.slots
+			r.slots.release()
 			continue
 		}
 		j := new(Job)
@@ -133,7 +133,7 @@ func (r *Runner) loop() {
 		r.running = append(r.running, j)
 		r.mu.Unlock()
 		go func() {
-			defer func() { <-r.slots }()
+			defer r.slots.release()
 			r.runOne(j)
 			r.mu.Lock()
 			r.running = slices.DeleteFunc(r.running, func(x *Job) bool { return x == j })
@@ -147,6 +147,42 @@ func (r *Runner) loop() {
 			r.mu.Unlock()
 		}()
 	}
+}
+
+// slots bounds how many jobs run at once; the page can change the bound while jobs run.
+type slots struct {
+	mu          sync.Mutex
+	free        *sync.Cond
+	limit, used int
+}
+
+func newSlots(limit int) *slots {
+	s := &slots{limit: max(1, limit)}
+	s.free = sync.NewCond(&s.mu)
+	return s
+}
+
+func (s *slots) acquire() {
+	s.mu.Lock()
+	for s.used >= s.limit {
+		s.free.Wait()
+	}
+	s.used++
+	s.mu.Unlock()
+}
+
+func (s *slots) release() { s.mu.Lock(); s.used--; s.free.Broadcast(); s.mu.Unlock() }
+
+// resize changes the bound; lowering it lets running jobs finish and holds new ones back.
+func (s *slots) resize(limit int) { s.mu.Lock(); s.limit = max(1, limit); s.free.Broadcast(); s.mu.Unlock() }
+
+func (s *slots) size() int {
+	if s == nil {
+		return 1
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.limit
 }
 
 func (r *Runner) set(f func()) { r.mu.Lock(); f(); r.mu.Unlock() }
@@ -393,5 +429,5 @@ func (r *Runner) Snapshot() map[string]any {
 	}
 	return map[string]any{"can_run": true, "repo": r.repo, "leftover": r.leftovers(), "provider": settings.Provider,
 		"models": agentModels(), "session_limit": settings.SessionLimit, "usage_unit": settings.unit(),
-		"running": running, "concurrency": cap(r.slots), "queued": append([]Job{}, r.queue...), "history": append([]Job{}, r.history...)}
+		"running": running, "concurrency": r.slots.size(), "queued": append([]Job{}, r.queue...), "history": append([]Job{}, r.history...)}
 }
