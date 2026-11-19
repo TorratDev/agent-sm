@@ -24,8 +24,11 @@ const (
 var closeWord = regexp.MustCompile(`(?i)\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b[^\n]{0,40}#\d+|#\d+[^\n]{0,40}\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b`)
 
 func attribution() (string, string) {
-	if settings.Provider == "claude" {
+	switch settings.Provider {
+	case "claude":
 		return "Claude <noreply@anthropic.com>", "Generated with Claude Code via agent-sm."
+	case "opencode":
+		return "OpenCode <noreply@opencode.ai>", "Generated with OpenCode via agent-sm."
 	}
 	return "Copilot App <223556219+Copilot@users.noreply.github.com>", "Generated with GitHub Copilot via agent-sm."
 }

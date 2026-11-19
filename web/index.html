@@ -282,7 +282,7 @@
       <label>Repository path <input class="field" id="repoPath" type="text" size="36" placeholder="/path/to/git/repository"></label>
       <button class="btn" id="browseRepo" type="button">Browse folders</button>
       <label>Language profile <select class="field" id="language"><option value="auto">Auto detect</option><option value="server">Server profile</option><option value="go">Go</option><option value="dotnet">.NET example (Inventory)</option></select></label>
-      <label>Agent <select class="field" id="agent"><option value="copilot">Copilot</option><option value="claude">Claude</option></select></label>
+      <label>Agent <select class="field" id="agent"><option value="copilot">Copilot</option><option value="claude">Claude</option><option value="opencode">OpenCode</option></select></label>
       <button class="btn primary" id="selectRepo">Use setup</button>
     </section>
     <dialog class="panel folder-picker" id="folderPicker" aria-labelledby="folderTitle">
@@ -593,12 +593,12 @@ async function post(path, body) {
 
 // Model IDs belong to the selected CLI's catalog, not a hardcoded web catalog.
 function saved() { try { return JSON.parse(localStorage.getItem("sm-models-" + QUEUE.provider)) || {}; } catch { return {}; } }
-function renderModels(defaults) {
+function renderModels(defaults, options) {
   if ($("models").children.length || !defaults) return; // built once: rebuilding would reset an open picker
-  const mine = saved();
+  const mine = saved(), choices = options || [];
   $("models").innerHTML = Object.keys(defaults).map(state => {
-    const cur = mine[state] || defaults[state];
-    return `<label>${state} <input class="field" data-state="${state}" value="${esc(cur)}" aria-label="${state} model"></label>`;
+    const cur = mine[state] || defaults[state], list = "model-options-" + state;
+    return `<label>${state} <input class="field" list="${list}" data-state="${state}" value="${esc(cur)}" aria-label="${state} model"><datalist id="${list}">${choices.map(m => `<option value="${esc(m)}"></option>`).join("")}</datalist></label>`;
   }).join("");
 }
 const chosenModels = () => Object.fromEntries([...document.querySelectorAll("#models input")].map(s => [s.dataset.state, s.value]));
@@ -607,7 +607,7 @@ $("models").addEventListener("change", () => { try { localStorage.setItem("sm-mo
 function renderQueue(q) {
   const first = !QUEUE.provider;
   const providerChanged = QUEUE.provider && QUEUE.provider !== q.provider;
-  QUEUE = q; BUSY = !!(q.running || []).length; renderModels(q.models);
+  QUEUE = q; BUSY = !!(q.running || []).length; renderModels(q.models, q.model_options);
   $("provider").textContent = q.provider || "";
   $("budgetUnit").textContent = q.usage_unit || "";
   $("budget").min = q.min_session_limit;

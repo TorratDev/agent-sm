@@ -37,10 +37,14 @@ func agent(c *Ctx, state State, prompt string, out any) (result Out) {
 			}()
 		}
 	}
-	if settings.Provider == "claude" {
+	switch settings.Provider {
+	case "claude":
 		return claudeAgent(c, state, prompt, out, transcript)
+	case "opencode":
+		return opencodeAgent(c, state, prompt, out, transcript)
+	default:
+		return copilotAgent(c, state, prompt, out, transcript)
 	}
-	return copilotAgent(c, state, prompt, out, transcript)
 }
 
 func process(ctx context.Context, dir, name string, args ...string) *exec.Cmd {
@@ -295,7 +299,8 @@ func cleanAgentEnv() []string {
 		k, _, _ := strings.Cut(entry, "=")
 		switch k {
 		case "COPILOT_ALLOW_ALL", "COPILOT_ASSISTED_APPROVAL", "GITHUB_COPILOT_PROMPT_MODE_EXTENSIONS",
-			"SM_RESOLVED_CONFIG", "JIRA_API_TOKEN", "JIRA_USER_EMAIL", "BASH_ENV", "ENV":
+			"SM_RESOLVED_CONFIG", "JIRA_API_TOKEN", "JIRA_USER_EMAIL", "BASH_ENV", "ENV",
+			"OPENCODE_CONFIG", "OPENCODE_CONFIG_CONTENT", "OPENCODE_CONFIG_PROJECT_DISABLE", "OPENCODE_DISABLE_AUTOUPDATE":
 			continue
 		}
 		if settings.Management.Mode == "service" {

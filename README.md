@@ -2,7 +2,7 @@
 
 A state machine that takes one GitHub issue to a reviewed branch. The program owns the loop:
 each step returns a typed outcome, one table (`next()` in `main.go`) decides the transition, and
-agents (`copilot -p` by default, or `claude -p`) only run inside single steps. Every step is declared once in the `steps`
+agents (`copilot -p` by default, `claude -p`, or `opencode run`) only run inside single steps. Every step is declared once in the `steps`
 table in `main.go`: its function, outcomes, role prompt, output schema, allow list and model.
 
     prepare -> plan -> investigate (one session per unit) -> execute -> check -> review -> publish
@@ -42,12 +42,12 @@ The page marks previous work as kept; web attempts also retain separate logs. Pu
 refuses to overwrite a remote branch that appeared after the name was selected.
 
 The repo's working tree must be clean; the run creates an available `sm/issue-<n>` branch. It needs
-`copilot` (or `claude`), `git` and `gh` on the PATH, authenticated independently of the desktop
+`copilot`, `claude`, or `opencode`, plus `git` and `gh` on the PATH, authenticated independently of the desktop
 app, plus the target project's build/test tools. Checks must be configured; there is no
 implicit Cargo default. `stats` and `allow` do not require a project profile.
 
 With no arguments or config, `go run .` starts the web UI in the current Git repo. It detects Go
-projects and the bundled Inventory .NET sample, and prefers the installed Copilot CLI, then Claude.
+projects and the bundled Inventory .NET sample, and prefers the installed Copilot CLI, then Claude, then OpenCode.
 Use **Browse folders** to navigate local folders and select a Git working tree, or enter its path
 manually. The picker validates Git before enabling selection and resolves subfolders to their
 repository root; linked worktrees are supported too. Non-Git folders and unreadable/missing paths
@@ -67,21 +67,21 @@ in place; delete it before running the issue again.
 |---|---|---|
 | `SM_PUBLISH` | empty | empty: stop at a local staged branch. `pr`: commit, rebase, push, open a draft PR. `merge`: also merge it. |
 | `SM_BASE` | `origin/main` | Branch that worktrees start from and publish rebases onto. |
-| `SM_PROVIDER` | `copilot` | Runner: `copilot` or `claude`. |
-| `SM_SESSION_LIMIT` | Copilot: `100`; Claude: `2` | Session limit in the provider's native units: Copilot AI credits (minimum 100) or Claude USD. |
-| `SM_RUN_LIMIT` | Copilot: `500`; Claude: `20` | Run limit in the same native units; `0` disables it. A nonzero Copilot limit must be at least 100. Unknown usage prevents another step under a run limit. |
+| `SM_PROVIDER` | `copilot` | Runner: `copilot`, `claude`, or `opencode`. |
+| `SM_SESSION_LIMIT` | Copilot: `100`; Claude/OpenCode: `2` | Session limit in the provider's native units: Copilot AI credits (minimum 100) or Claude/OpenCode USD. |
+| `SM_RUN_LIMIT` | Copilot: `500`; Claude/OpenCode: `20` | Run limit in the same native units; `0` disables it. A nonzero Copilot limit must be at least 100. Unknown usage prevents another step under a run limit. |
 | `SM_CONCURRENCY` | `1` | Starting value of the page's **In parallel** field: how many queued issues `serve` runs at once (1–16, across all selected repositories). Choosing another number and pressing Run changes it for the whole server; lowering it lets running jobs finish and holds new ones back. Each job gets its own `<n>-sm` worktree and branch; one issue never runs twice at once, and a queued issue that is already running waits. Session and run limits apply to each job, so the total spend can reach this many times the run limit. Stop and Ctrl-C end every running job. Profile field: `concurrency`. |
-| `SM_BUDGET`, `SM_RUN_BUDGET` | none | Legacy Claude-only dollar-limit aliases. Rejected for Copilot rather than converted to credits. |
+| `SM_BUDGET`, `SM_RUN_BUDGET` | none | Legacy dollar-limit aliases for Claude and OpenCode. Rejected for Copilot rather than converted to credits. |
 | `SM_TIMEOUT` | `60` | Minutes before an agent session and its child processes are killed. |
-| `SM_MODEL_<STATE>` | Copilot: `auto`; Claude: sonnet 5.5, opus 5.5 for review | Explicit CLI model ID per step. The web input wins for queued runs. |
+| `SM_MODEL_<STATE>` | Copilot: `auto`; Claude: sonnet 5.5, opus 5.5 for review; OpenCode: `opencode/deepseek-v4.1-flash-free`; plan/review prefer `jev-1.13-free`, then `opencode/glm-5.3-flash`, when installed | Explicit CLI model ID per step. The page offers the selected provider's models as suggestions, while keeping the value editable. The web input wins for queued runs. |
 | `SM_CHECKS` | profile (required) | Check commands, one per line. Empty checks fail configuration. |
 | `SM_FMT` | profile or none | Formatter run before staging/checks; failure is explicit. Setting `SM_CHECKS` without `SM_FMT` disables the profile formatter. |
 | `SM_ALLOW_FILE` | none | Claude-only JSON `{"state": "tools"}`; invalid files fail startup. Prefer profile `commands` for portable shell tools. |
 | `SM_EXTRA_ALLOW` | none | Claude-only allow entries added to every agent step. |
 | `SM_ADD_DIRS` | none | Comma-separated directories agents may read outside the repo. |
 | `SM_NOTES_DIR` | none | Operator notes added to dispatches: `all.md`, or `<role>.md` for one step. |
-| `SM_AUDIT` | on for Claude (off in service mode and for Copilot) | Claude only: load every tool and bypass permissions (outward commands stay denied) to measure tool use. On by default while runs still error; `SM_AUDIT=0` or `"audit": false` turns it off. Not a sandbox. |
-| `SM_TRANSCRIPTS` | `true` | Local transcript saving for either provider (`true`/`false` or `1`/`0`), on by default while runs still error. A capture failure is logged and never fails the step. Independent of permission audit. |
+| `SM_AUDIT` | on for Claude (off in service mode and for Copilot/OpenCode) | Claude only: load every tool and bypass permissions (outward commands stay denied) to measure tool use. On by default while runs still error; `SM_AUDIT=0` or `"audit": false` turns it off. Not a sandbox. |
+| `SM_TRANSCRIPTS` | `true` | Local transcript saving for every provider (`true`/`false` or `1`/`0`), on by default while runs still error. A capture failure is logged and never fails the step. Independent of permission audit. |
 | `SM_GHIDRA_COPY` | `none` | Legacy-profile-only Ghidra project copy. |
 | `SM_EXPORT` | `~/rescue-re/export` | Legacy-profile-only export; generic runs do not inspect it. |
 | `SM_EPIC` | none | Epic that a follow-up issue joins (split, or three failed fix rounds). |
@@ -111,7 +111,7 @@ Supported fields are `provider`, `models` (state to CLI model ID), `checks`, `fo
 `required_test_reports`, `session_limit`, `run_limit`, `timeout_minutes`, `commands`,
 `notes_dir`, `add_dirs`, `base`, `jira`, `management`, `transcripts`, `concurrency`, and the Claude-specific `claude_allow`,
 `claude_extra_allow`, `audit`, and `legacy_rust_ghidra`. Unknown fields fail startup.
-The page can select either provider; switching providers uses that provider's limit defaults,
+The page can select Copilot, Claude, or OpenCode; switching providers uses that provider's limit defaults,
 while provider-specific options still require a compatible profile.
 
 `checks` are trusted shell commands run deterministically in the worktree, including after a
@@ -137,15 +137,19 @@ role notes for portable guidance. Copilot also loads its normal repository instr
 Do not pass app configuration as an agent-sm profile: `.github/github-app.yml` remains owned
 by the Copilot app. Old rescue-specific prompts are selected only by `legacy_rust_ghidra`.
 
+OpenCode defaults to DeepSeek Flash. The decision-heavy plan and review steps prefer `jev-1.13-free`, then OpenCode's `opencode/glm-5.3-flash`, when the installed catalog offers them; otherwise they stay on DeepSeek Flash. Short names such as `deepseek-v4.1-flash-free`, `glm-5.3-flash`, and `jev-1.13-free` are expanded to their provider-qualified IDs.
+
+OpenCode runs each step with a generated private agent definition derived from the state's allow list, so writes and shell commands stay restricted. Its `--format json` event stream supplies the final answer, tool calls, session ID, token counts, and per-step cost; the answer still goes through the same strict local JSON validation. It uses `--standalone`, disables project configuration, and keeps the target checkout's own OpenCode config from weakening permissions.
+
 Copilot uses `--output-format=json` JSONL events, strict local JSON validation, and
 `--usage-output-file` for native credits. The last complete main-agent response is decoded
 without Markdown rendering or line wrapping, and requires a successful terminal `result`
 event. Tool/sub-agent messages and partial deltas cannot substitute for that response;
 prose, code fences, malformed JSON and off-schema content are still rejected, not repaired.
 Its live feed currently shows start/end, not tool calls; unavailable model/tool/turn/usage
-data is marked unknown. Claude retains its stream
-feed. Both reject missing, duplicate, malformed, or off-schema result fields and failed
-subprocesses. Stats separate providers and units; old Claude stats remain readable.
+data is marked unknown. Claude retains its stream feed, and OpenCode exposes tool calls,
+turns, tokens, and cost from its JSON events. All runners reject missing, duplicate,
+malformed, or off-schema result fields and failed subprocesses. Stats separate providers and units; old Claude stats remain readable.
 `allow` emits Claude syntax only; it does not infer a Copilot policy from absent telemetry.
 
 Worker MCP servers, delegation, and broad permission bypasses are not enabled for Copilot:
@@ -346,6 +350,7 @@ the complete history; large installations should compact/split this state before
 - Transcripts are on by default. To turn them off, untick **Save transcripts** before Run, set `"transcripts": false` in a profile, or use `SM_TRANSCRIPTS=0`. Each agent call/retry gets a separate private directory at `<scratch>/transcripts/<provider>-<step>-<unique>/`; its path is recorded in `events.jsonl`.
   - `request.json`: exact CLI arguments (including prompts), working directory, schema and start time; no environment dump.
   - `stdout.log` / `stderr.log`: raw CLI streams captured before JSON validation, including malformed output. Claude's stdout includes its message/tool stream and native usage.
+  - OpenCode keeps the generated private `opencode.json` agent definition next to the raw streams, so the effective permissions can be inspected.
   - Copilot also retains `usage.json` and copies its native session events to `messages.jsonl` after the subprocess exits. This requires CLI support for `--session-id`, `--no-remote-export` and the documented local session-state layout. Session export to GitHub is disabled for these captured Copilot calls; no gist/share upload is requested.
   - `result.json`: agent-call outcome, finish time and any capture error. A logging failure prevents successful workflow continuation, even if the provider itself returned a valid result; provider usage statistics still describe that provider call.
   - Captures contain only messages exposed by the CLI, not hidden model reasoning. Cancellation, output limits, startup failure or disk errors can leave partial captures; a missing native session log is recorded explicitly. Transcripts are not reconstructed for past runs.
@@ -368,6 +373,7 @@ remain opt-in and are not run in CI.
     go vet ./... && go test ./...
     SM_SMOKE=1 go test -run Smoke -v                     # opt-in: one real Copilot session
     SM_SMOKE=1 SM_PROVIDER=claude go test -run Smoke -v  # opt-in: one real Claude session
+    SM_SMOKE=1 SM_PROVIDER=opencode go test -run Smoke -v # opt-in: one real OpenCode session
 
 Normal tests use fake CLIs and temporary repositories; they do not call paid agents or mutate Jira.
 CLI flags/usage follow the installed CLI's help. Live provider and target-.NET compatibility

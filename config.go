@@ -43,6 +43,9 @@ var managementCommand bool
 
 const minCopilotCredits = 100
 const maxConcurrency = 16
+const opencodeDefaultModel = "opencode/deepseek-v4.1-flash-free"
+const opencodeDecisionModel = "opencode/glm-5.3-flash"
+const opencodeJevModel = "opencode/jev-1.13-free"
 
 func finiteNonnegative(n float64) bool {
 	return !math.IsNaN(n) && !math.IsInf(n, 0) && n >= 0
@@ -52,7 +55,7 @@ func defaultProfile(provider string) Profile {
 	p := Profile{Provider: provider, SessionLimit: minCopilotCredits, RunLimit: 500, TimeoutMinutes: 60, Base: "origin/main",
 		Models: map[string]string{}, Commands: map[string][]string{},
 		Transcripts: true} // on until runs stop erroring; turn off with "transcripts": false or SM_TRANSCRIPTS=0
-	if provider == "claude" {
+	if provider == "claude" || provider == "opencode" {
 		p.SessionLimit, p.RunLimit = 2, 20
 	}
 	return p
@@ -131,7 +134,7 @@ func (p *Profile) applyLimitEnv() error {
 		dst  *float64
 	}{{"SM_BUDGET", &p.SessionLimit}, {"SM_RUN_BUDGET", &p.RunLimit}} {
 		if v, ok := os.LookupEnv(entry.name); ok {
-			if p.Provider != "claude" {
+			if p.Provider == "copilot" {
 				return fmt.Errorf("%s is in dollars; use SM_SESSION_LIMIT/SM_RUN_LIMIT for Copilot credits", entry.name)
 			}
 			n, err := strconv.ParseFloat(v, 64)
@@ -233,7 +236,7 @@ func loadProfile(path string) (Profile, error) {
 	}
 	if f := os.Getenv("SM_ALLOW_FILE"); f != "" {
 		if p.Provider != "claude" {
-			return p, fmt.Errorf("SM_ALLOW_FILE uses Claude syntax; use profile commands for Copilot")
+			return p, fmt.Errorf("SM_ALLOW_FILE uses Claude syntax; use profile commands for Copilot/OpenCode")
 		}
 		b, err := os.ReadFile(f)
 		if err != nil {
@@ -302,8 +305,8 @@ func (p Profile) validateFor(managementOnly bool) error {
 	if p.Management.Mode == "service" && (p.Audit || p.ClaudeExtra != "") {
 		return fmt.Errorf("service management does not allow audit/extra permission bypasses")
 	}
-	if p.Provider != "copilot" && p.Provider != "claude" {
-		return fmt.Errorf("provider must be copilot or claude")
+	if p.Provider != "copilot" && p.Provider != "claude" && p.Provider != "opencode" {
+		return fmt.Errorf("provider must be copilot, claude or opencode")
 	}
 	if p.Provider != "claude" && (len(p.ClaudeAllow) > 0 || p.ClaudeExtra != "" || p.Audit) {
 		return fmt.Errorf("Claude allow lists and audit mode require provider claude")
@@ -394,18 +397,21 @@ func (p Profile) validateFor(managementOnly bool) error {
 }
 
 func (p Profile) unit() string {
-	if p.Provider == "claude" {
-		return "USD"
+	if p.Provider == "copilot" {
+		return "credits"
 	}
-	return "credits"
+	return "USD"
 }
 
 func (p Profile) model(st Step) string {
 	if m := p.Models[st.Name]; m != "" {
 		return m
 	}
-	if p.Provider == "claude" {
+	switch p.Provider {
+	case "claude":
 		return st.Model
+	case "opencode":
+		return opencodeModelFor(st)
 	}
 	return "auto"
 }

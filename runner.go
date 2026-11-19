@@ -56,7 +56,7 @@ type Runner struct {
 
 var (
 	budgetRe       = regexp.MustCompile(`^\d+(\.\d+)?$`)
-	modelRe        = regexp.MustCompile(`^[a-z0-9][a-z0-9.\-]{0,63}$`)
+	modelRe        = regexp.MustCompile(`^[a-z0-9][a-z0-9._/#\-]{0,127}$`)
 	worktreeNameRe = regexp.MustCompile(`^([1-9][0-9]*)-sm(?:-[1-9][0-9]*)?$`)
 )
 
