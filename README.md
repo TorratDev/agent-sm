@@ -19,7 +19,7 @@ Exits: `ready`, `gave-up`, `errored`, `split`, `escalated`, `stopped`.
     agent-sm allow [file]                       # allow lists suggested by the stats, as SM_ALLOW_FILE JSON
 
 Sub-issues: on the page, an issue with GitHub sub-issues shows its progress. Selecting it queues
-its open sub-issues in its place, one after another; the issue itself never runs. If all its
+its open sub-issues in its place; the issue itself never runs. If all its
 sub-issues are already closed, selecting it closes the issue as completed (not in service mode). A sub-issue is
 skipped when GitHub lists an open issue as blocking it, when its body's explicit dependency entries
 name an open issue, or when it has sub-issues of its own (select that one directly). Body dependencies
@@ -69,6 +69,7 @@ in place; delete it before running the issue again.
 | `SM_PROVIDER` | `copilot` | Runner: `copilot` or `claude`. |
 | `SM_SESSION_LIMIT` | Copilot: `100`; Claude: `2` | Session limit in the provider's native units: Copilot AI credits (minimum 100) or Claude USD. |
 | `SM_RUN_LIMIT` | Copilot: `500`; Claude: `20` | Run limit in the same native units; `0` disables it. A nonzero Copilot limit must be at least 100. Unknown usage prevents another step under a run limit. |
+| `SM_CONCURRENCY` | `1` | Queued issues the `serve` page runs at once (1–16, across all selected repositories). Each job gets its own `<n>-sm` worktree and branch; one issue never runs twice at once, and a queued issue that is already running waits. Session and run limits apply to each job, so the total spend can reach this many times the run limit. Stop and Ctrl-C end every running job. Profile field: `concurrency`. |
 | `SM_BUDGET`, `SM_RUN_BUDGET` | none | Legacy Claude-only dollar-limit aliases. Rejected for Copilot rather than converted to credits. |
 | `SM_TIMEOUT` | `60` | Minutes before an agent session and its child processes are killed. |
 | `SM_MODEL_<STATE>` | Copilot: `auto`; Claude: sonnet 5.5, opus 5.5 for review | Explicit CLI model ID per step. The web input wins for queued runs. |
@@ -107,7 +108,7 @@ receive an immutable resolved snapshot, including models and limits.
 
 Supported fields are `provider`, `models` (state to CLI model ID), `checks`, `format`,
 `required_test_reports`, `session_limit`, `run_limit`, `timeout_minutes`, `commands`,
-`notes_dir`, `add_dirs`, `base`, `jira`, `management`, `transcripts`, and the Claude-specific `claude_allow`,
+`notes_dir`, `add_dirs`, `base`, `jira`, `management`, `transcripts`, `concurrency`, and the Claude-specific `claude_allow`,
 `claude_extra_allow`, `audit`, and `legacy_rust_ghidra`. Unknown fields fail startup.
 The page can select either provider; switching providers uses that provider's limit defaults,
 while provider-specific options still require a compatible profile.

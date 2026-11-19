@@ -231,7 +231,7 @@ func latestRun(root string) (dir, issue string) {
 // It reads files only (status.json, events, stats), so it can also replay a finished run.
 // With no issue it follows the newest run under SM_SCRATCH_ROOT (default ~/.local/state/agent-sm).
 // The page can list issues and start runs from any selected local Git repository (localhost,
-// token-protected, one run at a time).
+// token-protected, up to `concurrency` runs at once, each in its own worktree).
 func serve(issue, addr, repo string) error {
 	root := scratchRoot()
 	statsPath := os.Getenv("SM_STATS")
@@ -254,7 +254,7 @@ func serve(issue, addr, repo string) error {
 	}
 	runners := map[string]*Runner{}
 	var runnersMu sync.Mutex
-	var executionGate sync.Mutex
+	slots := make(chan struct{}, max(1, settings.Concurrency)) // jobs running at once, across all repositories
 	runnerFor := func(path string) (*Runner, error) {
 		if path == "" {
 			path = defaultRepo
@@ -271,7 +271,7 @@ func serve(issue, addr, repo string) error {
 		if r := runners[canonical]; r != nil {
 			return r, nil
 		}
-		r := &Runner{repo: canonical, self: self, stats: statsPath, gate: &executionGate}
+		r := &Runner{repo: canonical, self: self, stats: statsPath, slots: slots}
 		runners[canonical] = r
 		return r, nil
 	}
@@ -485,6 +485,11 @@ func serve(issue, addr, repo string) error {
 	server := &http.Server{Addr: addr, Handler: http.HandlerFunc(guard), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
+		runnersMu.Lock()
+		for _, r := range runners { // SIGINT: children run in their own process groups, so end them here
+			r.Stop()
+		}
+		runnersMu.Unlock()
 		stopCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
 		server.Shutdown(stopCtx)

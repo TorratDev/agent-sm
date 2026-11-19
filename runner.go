@@ -37,17 +37,21 @@ type Job struct {
 	Management string            `json:"management,omitempty"`
 }
 
-// Runner runs queued jobs one at a time, each as `agent-sm <worktree> <issue>` in its own
-// process group so Stop can end the whole run (claude, probes and all).
+// Runner runs queued jobs, each as `agent-sm <worktree> <issue>` in its own worktree and
+// process group so Stop can end the whole run (claude, probes and all). Jobs run at once up to
+// the free slots, which every repository's runner shares; one issue never runs twice at once.
 type Runner struct {
 	repo, self, stats string
-	gate              *sync.Mutex
+	slots             chan struct{} // shared across runners; nil means one job at a time
 	mu                sync.Mutex
+	idle              *sync.Cond // signalled when a job finishes
+	wt                sync.Mutex // git worktree add/fetch in one repository, one at a time
 	queue             []Job
-	cur               *Job
-	cmd               *exec.Cmd
+	running           []*Job
+	cmds              map[*Job]*exec.Cmd
+	stopped           map[*Job]bool
 	history           []Job
-	working, stopping bool
+	working           bool
 }
 
 var (
@@ -74,6 +78,13 @@ func agentModelsFor(profile Profile) map[string]string {
 func (r *Runner) Enqueue(jobs []Job) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.slots == nil {
+		r.slots = make(chan struct{}, 1)
+	}
+	if r.idle == nil {
+		r.idle = sync.NewCond(&r.mu)
+		r.cmds, r.stopped = map[*Job]*exec.Cmd{}, map[*Job]bool{}
+	}
 	r.queue = append(r.queue, jobs...)
 	if !r.working {
 		r.working = true
@@ -81,42 +92,60 @@ func (r *Runner) Enqueue(jobs []Job) {
 	}
 }
 
+// next is the index of the first queued job whose issue is not running, or -1. Holds r.mu.
+func (r *Runner) next() int {
+	for i, j := range r.queue {
+		if !slices.ContainsFunc(r.running, func(x *Job) bool { return x.Issue == j.Issue }) {
+			return i
+		}
+	}
+	return -1
+}
+
+// loop starts queued jobs as slots free up, until the queue is empty.
 func (r *Runner) loop() {
 	for {
 		r.mu.Lock()
+		for len(r.queue) > 0 && r.next() < 0 { // only issues already running are queued
+			r.idle.Wait()
+		}
 		if len(r.queue) == 0 {
-			r.working, r.cur = false, nil
+			r.working = false
 			r.mu.Unlock()
 			return
 		}
-		j := r.queue[0]
-		r.queue = r.queue[1:]
-		j.Started = time.Now().Format(time.RFC3339)
-		r.cur = &j
 		r.mu.Unlock()
-
-		if r.gate != nil {
-			r.gate.Lock()
-			r.mu.Lock()
-			stopped := r.stopping
-			r.mu.Unlock()
-			if stopped {
-				j.Exit = "stopped"
-			} else {
-				r.runOne(&j)
-			}
-			r.gate.Unlock()
-		} else {
-			r.runOne(&j)
-		}
-
+		r.slots <- struct{}{}
 		r.mu.Lock()
-		r.history = append(r.history, j)
-		if len(r.history) > 30 {
-			r.history = r.history[1:]
+		i := r.next()
+		if i < 0 { // Stop emptied the queue, or a job for the same issue started meanwhile
+			r.mu.Unlock()
+			<-r.slots
+			continue
 		}
-		r.cur, r.cmd, r.stopping = nil, nil, false
+		j := new(Job)
+		*j = r.queue[i]
+		r.queue = slices.Delete(r.queue, i, i+1)
+		j.Started = time.Now().Format(time.RFC3339)
+		if j.Repo == "" {
+			j.Repo = r.repo
+		}
+		r.running = append(r.running, j)
 		r.mu.Unlock()
+		go func() {
+			defer func() { <-r.slots }()
+			r.runOne(j)
+			r.mu.Lock()
+			r.running = slices.DeleteFunc(r.running, func(x *Job) bool { return x == j })
+			delete(r.cmds, j)
+			delete(r.stopped, j)
+			r.history = append(r.history, *j)
+			if len(r.history) > 30 {
+				r.history = r.history[1:]
+			}
+			r.idle.Broadcast()
+			r.mu.Unlock()
+		}()
 	}
 }
 
@@ -236,7 +265,9 @@ func (r *Runner) runOne(j *Job) {
 		base = meta.Base
 	}
 	r.set(func() { j.Base = base })
+	r.wt.Lock()
 	wt, branch, err := r.worktreeAt(j.Issue, base)
+	r.wt.Unlock()
 	if err != nil {
 		r.set(func() { j.Err = err.Error() })
 		return
@@ -265,11 +296,22 @@ func (r *Runner) runOne(j *Job) {
 	cmd.Env = childEnv(j, r.stats)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		r.set(func() { j.Err = err.Error() })
+	r.mu.Lock()
+	if r.stopped[j] { // stopped while the worktree was being made
+		j.Exit = "stopped"
+		r.mu.Unlock()
 		return
 	}
-	r.set(func() { r.cmd = cmd })
+	err = cmd.Start()
+	if err != nil {
+		j.Err = err.Error()
+	} else if r.cmds != nil {
+		r.cmds[j] = cmd
+	}
+	r.mu.Unlock()
+	if err != nil {
+		return
+	}
 	cmd.Wait()
 	exit := "died" // no exit event: the process ended abnormally
 	diagnostic := ""
@@ -300,7 +342,7 @@ func (r *Runner) runOne(j *Job) {
 		}
 	}
 	r.mu.Lock()
-	if r.stopping {
+	if r.stopped[j] {
 		exit = "stopped"
 	}
 	j.Exit = exit
@@ -321,13 +363,19 @@ func (r *Runner) runOne(j *Job) {
 	}
 }
 
-// Stop clears the queue and ends the running job's whole process group.
+// Stop clears the queue and ends every running job's whole process group.
 func (r *Runner) Stop() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.queue, r.stopping = nil, true
-	if r.cmd != nil && r.cmd.Process != nil {
-		syscall.Kill(-r.cmd.Process.Pid, syscall.SIGTERM)
+	r.queue = nil
+	for _, j := range r.running {
+		r.stopped[j] = true
+		if cmd := r.cmds[j]; cmd != nil && cmd.Process != nil {
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		}
+	}
+	if r.idle != nil {
+		r.idle.Broadcast()
 	}
 }
 
@@ -339,12 +387,11 @@ func runScratch(repo string, issue int) string {
 func (r *Runner) Snapshot() map[string]any {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var cur *Job
-	if r.cur != nil {
-		c := *r.cur
-		cur = &c
+	running := []Job{}
+	for _, j := range r.running {
+		running = append(running, *j)
 	}
 	return map[string]any{"can_run": true, "repo": r.repo, "leftover": r.leftovers(), "provider": settings.Provider,
 		"models": agentModels(), "session_limit": settings.SessionLimit, "usage_unit": settings.unit(),
-		"running": cur, "queued": append([]Job{}, r.queue...), "history": append([]Job{}, r.history...)}
+		"running": running, "concurrency": cap(r.slots), "queued": append([]Job{}, r.queue...), "history": append([]Job{}, r.history...)}
 }

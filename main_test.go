@@ -752,3 +752,61 @@ printf '{"type":"result","is_error":false,"total_cost_usd":0.1,"structured_outpu
 		t.Fatalf("re-review dispatch missing the last REVISE list:\nfirst: %s\nsecond: %s", tail(string(first), 300), tail(string(second), 300))
 	}
 }
+
+// Queued jobs run at once, each in its own worktree, and one issue never runs twice at once.
+func TestQueueRunsJobsConcurrently(t *testing.T) {
+	repo := retryRepo(t)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "gh"), "#!/bin/sh\ncase \"$1\" in pr) echo '[]';; *) echo '{\"body\":\"\"}';; esac\n", 0o755)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SM_SCRATCH_ROOT", filepath.Join(dir, "scratch"))
+	log := filepath.Join(dir, "starts")
+	t.Setenv("SM_TEST_STARTS", log)
+	// Stand-in for agent-sm: waits until two jobs have started (so it fails unless they overlap),
+	// then checks its worktree holds only its own work.
+	self := filepath.Join(dir, "agent-sm")
+	writeFile(t, self, `#!/bin/sh
+wt="$1"; n="$2"; exit=ready
+mkdir "$SM_TEST_STARTS.$n" 2>/dev/null || exit=duplicate
+echo "$n" >> "$SM_TEST_STARTS"
+echo "issue $n" > "$wt/mine-$n.txt"
+i=0; while [ "$(wc -l < "$SM_TEST_STARTS")" -lt 2 ]; do i=$((i+1)); [ $i -gt 100 ] && exit=sequential && break; sleep 0.05; done
+[ "$(ls "$wt" | grep -c '^mine-')" = 1 ] || exit=shared
+[ "$(git -C "$wt" branch --show-current)" = "sm/issue-$n" ] || [ "$(git -C "$wt" branch --show-current)" = "sm/issue-$n-1" ] || exit=branch
+sleep 0.2
+rmdir "$SM_TEST_STARTS.$n"
+printf '{"exit":"%s"}\n' "$exit" >> "$SM_EVENTS"
+`, 0o755)
+	p := defaultProfile("copilot")
+	p.Base = "main"
+	useProfile(t, p)
+	r := &Runner{repo: repo, self: self, stats: filepath.Join(dir, "stats.jsonl"), slots: make(chan struct{}, 3)}
+	r.Enqueue([]Job{{Issue: 1, Profile: &p}, {Issue: 2, Profile: &p}, {Issue: 1, Profile: &p}})
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		snap := r.Snapshot()
+		if len(snap["running"].([]Job)) == 0 && len(snap["queued"].([]Job)) == 0 && len(snap["history"].([]Job)) == 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("queue did not finish: %+v", snap)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	worktrees := map[string]bool{}
+	for _, j := range r.Snapshot()["history"].([]Job) {
+		if j.Exit != "ready" || j.Err != "" {
+			t.Errorf("issue %d: exit %q err %q", j.Issue, j.Exit, j.Err)
+		}
+		worktrees[j.Worktree] = true
+	}
+	if len(worktrees) != 3 {
+		t.Errorf("jobs shared a worktree: %v", worktrees)
+	}
+	if got := testGit(t, repo, "branch", "--show-current"); got != "main" {
+		t.Errorf("main checkout switched to %s", got)
+	}
+	if m, _ := filepath.Glob(filepath.Join(repo, "mine-*")); len(m) != 0 {
+		t.Errorf("a job wrote into the main checkout: %v", m)
+	}
+}

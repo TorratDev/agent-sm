@@ -1227,3 +1227,15 @@ func TestUsageReportSeparatesProviders(t *testing.T) {
 		}
 	}
 }
+
+func TestConcurrencyEnv(t *testing.T) {
+	t.Setenv("SM_CONCURRENCY", "3")
+	p := defaultProfile("copilot")
+	if err := p.applyLimitEnv(); err != nil || p.Concurrency != 3 {
+		t.Fatalf("concurrency = %d, %v", p.Concurrency, err)
+	}
+	p.Concurrency = 17
+	if p.validate() == nil {
+		t.Fatal("concurrency 17 accepted")
+	}
+}
