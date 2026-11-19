@@ -15,21 +15,50 @@ import (
 	"time"
 )
 
+// maxOpencodeFallbacks bounds how many catalog models one step tries after a
+// free-tier quota or rate-limit error, so a stale catalog cannot turn one step
+// into a sweep.
+const maxOpencodeFallbacks = 3
+
 // opencodeAgent runs one `opencode run` session with a generated agent definition
-// that maps agent-sm's per-state permission list onto OpenCode's rules.
-func opencodeAgent(c *Ctx, state State, prompt string, out any, transcript *agentTranscript) (res Out) {
-	step := steps[state]
-	limit := settings.SessionLimit
-	if c.RunBudget > 0 {
-		if c.CostUnknown > 0 {
-			return OverBudget
+// that maps agent-sm's per-state permission list onto OpenCode's rules. When
+// OpenCode refuses the selected model because a free allowance or a rate limit is
+// spent, the next catalog model is tried instead of failing the step outright.
+func opencodeAgent(c *Ctx, state State, prompt string, out any, transcript *agentTranscript) Out {
+	model := opencodeModelID(stepModel(steps[state]))
+	tried := make([]string, 0, maxOpencodeFallbacks+1)
+	for {
+		// Every attempt gets its own session budget, bounded by what the run has left.
+		limit := settings.SessionLimit
+		if c.RunBudget > 0 {
+			if c.CostUnknown > 0 {
+				return OverBudget
+			}
+			limit = min(limit, c.RunBudget-c.Cost)
+			if limit <= 0 {
+				logEvent(map[string]any{"event": "run-budget-reached", "err": "the run budget is exhausted"})
+				return OverBudget
+			}
 		}
-		limit = min(limit, c.RunBudget-c.Cost)
-		if limit <= 0 {
-			logEvent(map[string]any{"event": "run-budget-reached", "err": "the run budget is exhausted"})
-			return OverBudget
+		tried = append(tried, model)
+		res, quota := opencodeAttempt(c, state, prompt, model, limit, out, transcript)
+		if quota == "" || len(tried) > maxOpencodeFallbacks {
+			return res
 		}
+		next, ok := opencodeFallbackModel(tried, quota)
+		if !ok {
+			return res
+		}
+		logEvent(map[string]any{"event": "opencode-model-fallback", "issue": c.Issue,
+			"state": state.String(), "from": model, "to": next, "reason": quota})
+		model = next
 	}
+}
+
+// opencodeAttempt runs one `opencode run` session. A non-empty quota detail means
+// the failure is a free-usage or rate-limit refusal that another model may avoid.
+func opencodeAttempt(c *Ctx, state State, prompt, model string, limit float64, out any, transcript *agentTranscript) (res Out, quota string) {
+	step := steps[state]
 	ctx, cancel := context.WithTimeout(runCtx, time.Duration(settings.TimeoutMinutes*float64(time.Minute)))
 	defer cancel()
 
@@ -41,20 +70,20 @@ func opencodeAgent(c *Ctx, state State, prompt string, out any, transcript *agen
 		dir, err = os.MkdirTemp(c.Scratch, "opencode-")
 		if err != nil {
 			logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
-			return Invalid
+			return Invalid, ""
 		}
 		defer os.RemoveAll(dir)
 	}
 	configPath, err := writeOpencodeConfig(dir, state)
 	if err != nil {
 		logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
-		return Invalid
+		return Invalid, ""
 	}
-	args := opencodeArgs(state, prompt, opencodeModelID(stepModel(step)))
+	args := opencodeArgs(state, prompt, model)
 	if transcript != nil {
 		if err := transcript.request(args, state, cancel); err != nil {
 			logEvent(map[string]any{"event": "transcript-error", "err": err.Error()})
-			return Invalid
+			return Invalid, ""
 		}
 	}
 	cmd := process(ctx, c.Repo, "opencode", args...)
@@ -71,10 +100,10 @@ func opencodeAgent(c *Ctx, state State, prompt string, out any, transcript *agen
 	}
 	if perr != nil {
 		logEvent(map[string]any{"event": "agent-error", "err": perr.Error()})
-		return Invalid
+		return Invalid, ""
 	}
 
-	st := &Stats{Provider: "opencode", Issue: c.Issue, State: state.String(), Model: opencodeModelID(stepModel(step)), ToolCalls: map[string]int{}, BashCmds: map[string]int{}}
+	st := &Stats{Provider: "opencode", Issue: c.Issue, State: state.String(), Model: model, ToolCalls: map[string]int{}, BashCmds: map[string]int{}}
 	if state == Investigate && len(c.Units) > 0 {
 		st.Unit = c.Units[c.UnitIdx].ID
 	}
@@ -217,7 +246,18 @@ func opencodeAgent(c *Ctx, state State, prompt string, out any, transcript *agen
 	st.Killed = ctx.Err() != nil && len(result) == 0
 	prog.flush(true)
 	c.Cost += st.CostUSD
-	st.UsageUnknown = !usageReported || usageSteps == 0
+	// A refusal before any step reports usage spent nothing, so it must not look
+	// like unknown usage and block the next model under a run limit.
+	quotaDetail := ""
+	if agentErr != nil {
+		quotaDetail = agentErr.Error()
+	} else if runErr != nil {
+		quotaDetail = tail(diagnostics.String(), 500)
+	}
+	if quotaDetail != "" && !opencodeQuotaError(quotaDetail) {
+		quotaDetail = ""
+	}
+	st.UsageUnknown = (!usageReported || usageSteps == 0) && quotaDetail == ""
 	if st.UsageUnknown {
 		c.CostUnknown++
 	}
@@ -227,10 +267,10 @@ func opencodeAgent(c *Ctx, state State, prompt string, out any, transcript *agen
 		logEvent(map[string]any{"event": "agent", "stats": st})
 	}()
 	if st.CostUSD >= limit {
-		return OverBudget
+		return OverBudget, ""
 	}
 	if ctx.Err() == context.DeadlineExceeded && len(result) == 0 {
-		return Timeout
+		return Timeout, ""
 	}
 	if runErr != nil || agentErr != nil || len(result) == 0 {
 		detail := ""
@@ -240,14 +280,65 @@ func opencodeAgent(c *Ctx, state State, prompt string, out any, transcript *agen
 			detail = runErr.Error()
 		}
 		logEvent(map[string]any{"event": "agent-error", "err": detail, "stderr": tail(diagnostics.String(), 1500)})
-		return Invalid
+		if quotaDetail != "" {
+			return Invalid, quotaDetail
+		}
+		return Invalid, ""
 	}
 	if err := validateResult(result, step.Schema, out); err != nil {
 		logEvent(map[string]any{"event": "invalid-result", "err": err.Error()})
-		return Invalid
+		return Invalid, ""
 	}
 	st.Result = tail(string(result), 1500)
-	return Ok
+	return Ok, ""
+}
+
+// opencodeQuotaError reports whether OpenCode refused the session because a free
+// allowance or a rate limit is spent. Another model may still work; authentication
+// and schema failures are not retryable this way.
+func opencodeQuotaError(detail string) bool {
+	detail = strings.ToLower(detail)
+	for _, marker := range []string{
+		"free usage limit", "usage limit reached", "quota", "rate limit",
+		"rate-limit", "too many requests", "429",
+	} {
+		if strings.Contains(detail, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// opencodeFallbackFamilies lists the coding models agent-sm may move to after a
+// quota error. Matching is by suffix so provider-qualified variants (for example
+// nvidia/z-ai/glm-5.3-flash) also count.
+var opencodeFallbackFamilies = []string{
+	"/jev-1.13-free", "/glm-5.3-flash", "/glm-5.3",
+	"/deepseek-v4.1-flash-free", "/deepseek-v4.1-flash", "/deepseek-v4-pro",
+	"/beam-free",
+}
+
+// opencodeFallbackModel returns the next catalog model to try. A free-usage failure
+// skips every free model because they share one allowance; other quota and rate
+// limit failures may move to any model in the list.
+func opencodeFallbackModel(tried []string, reason string) (string, bool) {
+	freeLimited := strings.Contains(strings.ToLower(reason), "free")
+	seen := map[string]bool{}
+	for _, model := range tried {
+		seen[model] = true
+	}
+	models := opencodeModels()
+	for _, family := range opencodeFallbackFamilies {
+		for _, model := range models {
+			if seen[model] || (freeLimited && strings.HasSuffix(model, "-free")) {
+				continue
+			}
+			if strings.HasSuffix(model, family) {
+				return model, true
+			}
+		}
+	}
+	return "", false
 }
 
 // opencodeArgs mirrors copilotArgs: the prompt carries the schema because OpenCode

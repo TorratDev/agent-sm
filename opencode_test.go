@@ -132,7 +132,7 @@ func TestOpencodeAgentResults(t *testing.T) {
 		{"valid", opencodeOutput(t, pass, cost(0.1)), "", Ok, 0, 0.1},
 		{"unknown usage", opencodeOutput(t, pass, nil), "", Ok, 1, 0},
 		{"incomplete result", opencodeOutput(t, `{}`, cost(0.1)), "", Invalid, 0, 0.1},
-		{"error event", opencodeEvent(map[string]any{"type": "error", "error": map[string]string{"message": "quota"}}), "", Invalid, 1, 0},
+		{"error event", opencodeEvent(map[string]any{"type": "error", "error": map[string]string{"message": "quota"}}), "", Invalid, 0, 0},
 		{"process failure", opencodeOutput(t, pass, cost(0.1)), "failure", Invalid, 0, 0.1},
 		{"budget", opencodeOutput(t, pass, cost(1)), "", OverBudget, 0, 1},
 		{"timeout", "", "timeout", Timeout, 1, 0},
@@ -170,6 +170,102 @@ if [ "$SM_TEST_MODE" = "failure" ]; then exit 1; fi
 				t.Fatalf("decoded result = %+v", r)
 			}
 		})
+	}
+}
+
+func TestOpencodeQuotaError(t *testing.T) {
+	for _, detail := range []string{
+		"OpenCode reported an error: Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.",
+		"rate limit exceeded",
+		"429 Too Many Requests",
+		"quota",
+	} {
+		if !opencodeQuotaError(detail) {
+			t.Errorf("%q should be retryable", detail)
+		}
+	}
+	for _, detail := range []string{"", "model not found", "permission denied", "invalid api key"} {
+		if opencodeQuotaError(detail) {
+			t.Errorf("%q should not be retryable", detail)
+		}
+	}
+}
+
+func TestOpencodeFallbackOnQuota(t *testing.T) {
+	oldModels, oldAt := opencodeCatalog.models, opencodeCatalog.at
+	t.Cleanup(func() { opencodeCatalog.models, opencodeCatalog.at = oldModels, oldAt })
+	opencodeCatalog.models, opencodeCatalog.at = nil, time.Time{}
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "opencode"), `#!/bin/sh
+if [ "$1" = "models" ]; then
+  printf 'opencode/deepseek-v4.1-flash-free\nnvidia/z-ai/glm-5.3-flash\n'
+  exit 0
+fi
+model=
+prev=
+for arg in "$@"; do
+  if [ "$prev" = "--model" ]; then model=$arg; fi
+  prev=$arg
+done
+case "$model" in
+  *-free) printf '%s' "$SM_QUOTA" ;;
+  *) printf '%s' "$SM_PASS" ;;
+esac
+`, 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("SM_QUOTA", opencodeEvent(map[string]any{"type": "error", "error": map[string]string{
+		"message": "Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models."}}))
+	t.Setenv("SM_PASS", opencodeOutput(t, `{"verdict":"PASS","reasons":[]}`, func() *float64 { n := .05; return &n }()))
+	statsPath := filepath.Join(dir, "stats.jsonl")
+	t.Setenv("SM_STATS", statsPath)
+	p := defaultProfile("opencode")
+	p.SessionLimit, p.RunLimit = 1, 5
+	useProfile(t, p)
+	c := &Ctx{Repo: dir, Scratch: dir, RunBudget: 5}
+	var r struct {
+		Verdict string
+		Reasons []string
+	}
+	if got := agent(c, Review, "fallback test", &r); got != Ok {
+		t.Fatalf("agent = %v", got)
+	}
+	if r.Verdict != "PASS" || c.Cost != .05 || c.CostUnknown != 0 {
+		t.Fatalf("result = %+v, cost = %v, unknown = %d", r, c.Cost, c.CostUnknown)
+	}
+	b, err := os.ReadFile(statsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var models []string
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var st Stats
+		if err := json.Unmarshal([]byte(line), &st); err != nil {
+			t.Fatal(err)
+		}
+		models = append(models, st.Model)
+	}
+	if !slices.Equal(models, []string{opencodeDefaultModel, "nvidia/z-ai/glm-5.3-flash"}) {
+		t.Fatalf("attempt models = %v", models)
+	}
+}
+
+func TestOpencodeFallbackSkipsFreeModels(t *testing.T) {
+	oldModels, oldAt := opencodeCatalog.models, opencodeCatalog.at
+	t.Cleanup(func() { opencodeCatalog.models, opencodeCatalog.at = oldModels, oldAt })
+	opencodeCatalog.models = []string{
+		"opencode/deepseek-v4.1-flash-free", "opencode/beam-free", "nvidia/z-ai/glm-5.3-flash",
+	}
+	opencodeCatalog.at = time.Now()
+	if got, ok := opencodeFallbackModel([]string{"opencode/deepseek-v4.1-flash-free"}, "free usage limit reached"); !ok || got != "nvidia/z-ai/glm-5.3-flash" {
+		t.Fatalf("free fallback = %q, %v", got, ok)
+	}
+	// A rate limit may move to another free model; only a free-usage failure skips them.
+	opencodeCatalog.models = []string{"opencode/deepseek-v4.1-flash-free", "opencode/beam-free"}
+	if got, ok := opencodeFallbackModel([]string{"opencode/deepseek-v4.1-flash-free"}, "rate limit"); !ok || got != "opencode/beam-free" {
+		t.Fatalf("rate-limit fallback = %q, %v", got, ok)
+	}
+	if got, ok := opencodeFallbackModel([]string{"opencode/deepseek-v4.1-flash-free"}, "free usage limit"); ok {
+		t.Fatalf("exhausted fallback = %q", got)
 	}
 }
 
