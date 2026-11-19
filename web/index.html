@@ -5,283 +5,333 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agent-sm</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;500&display=swap">
 <style>
+  /* A transit map: states are stations, every run is a line through them. The line takes the
+     run's status colour; a run that ends badly stops at a red station. */
   :root {
-    /* signal box: grey-green enamel, lamp colours for state (cobalt = running) */
-    --bg: #e9ece6; --panel: #f8faf6; --soft: #eef1eb; --ink: #1d2622; --mute: #5d6a63; --line: #cdd3cc;
-    --accent: #2457c5; --accent-soft: #e2e9f8; --on-accent: #fff;
-    --ok: #1f7a3a; --ok-soft: #dfeee2; --bad: #b3261e; --bad-soft: #f6e1df; --warn: #9a5b00; --warn-soft: #f4e8d2;
-    --term: #18201c; --term-ink: #d6ded8; --term-mute: #7f8c85; --term-tool: #9db8f0; --term-bad: #f19a92;
-    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    --bg: #eef1f5; --panel: #f9fafc; --soft: #e2e6ed; --ink: #14213d; --mute: #5a6478; --line: #cbd2dd;
+    --live: #4b3fd8; --live-soft: #e4e1fa; --on-live: #fff;
+    --ok: #0e7c5a; --ok-soft: #d9efe6; --bad: #c2361c; --bad-soft: #f7e0da; --warn: #a3660a; --warn-soft: #f4e8cf;
+    --term: #121a2c; --term-ink: #d5dbe8; --term-mute: #7d889e; --term-tool: #a9a2ff; --term-bad: #ff9a85;
+    --sans: "Overpass", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Overpass Mono", ui-monospace, Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #141a17; --panel: #1b2320; --soft: #222b27; --ink: #e4eae5; --mute: #93a199; --line: #2f3a35;
-      --accent: #85a7f2; --accent-soft: #1f2a42; --on-accent: #141a17;
-      --ok: #6cc489; --ok-soft: #173022; --bad: #f08a82; --bad-soft: #3a1c1a; --warn: #e2ae55; --warn-soft: #362a12;
-      --term: #0f1412;
+      --bg: #0f131b; --panel: #161b26; --soft: #1f2633; --ink: #e3e8f2; --mute: #8e99ad; --line: #2a3242;
+      --live: #9c93ff; --live-soft: #26224a; --on-live: #0f131b;
+      --ok: #4cc79a; --ok-soft: #12302a; --bad: #ff8a70; --bad-soft: #3a1e18; --warn: #e8b04e; --warn-soft: #33280f;
+      --term: #0a0d14;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
   button, input, select, textarea { font: inherit; color: inherit; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
+  [hidden] { display: none !important; }
   .num { font-variant-numeric: tabular-nums; }
   .mute { color: var(--mute); }
   .ok { color: var(--ok); } .no { color: var(--bad); } .wait { color: var(--warn); }
-
-  /* top bar */
-  .top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
-  .top-in { max-width: 1180px; margin: 0 auto; padding: 10px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .brand { font-weight: 700; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
-  .logo { width: 14px; height: 26px; border-radius: 7px; background: var(--ink); display: grid; place-items: center; } /* a three-lamp signal head */
-  .logo::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 -7px 0 color-mix(in srgb, var(--bg) 22%, transparent), 0 7px 0 color-mix(in srgb, var(--bg) 22%, transparent); }
-  .tag { font-size: 13px; font-weight: 600; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; padding: 0 7px; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px 2px 8px; font-size: 12px; font-weight: 600; background: var(--soft); color: var(--mute); }
-  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  .pill.run { background: var(--accent-soft); color: var(--accent); } .pill.run::before { animation: pulse 1.2s ease-in-out infinite; }
-  .pill.good { background: var(--ok-soft); color: var(--ok); } .pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.warn { background: var(--warn-soft); color: var(--warn); }
-  .grow { flex: 1; min-width: 0; }
-  #line { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  @keyframes pulse { 50% { opacity: .3; } }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 7px transparent; } 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--edge) 55%, transparent); } }
+  @keyframes blink { 50% { opacity: .35; } }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
-  main { max-width: 1180px; margin: 0 auto; padding: 8px 20px 60px; }
-  section { margin-top: 32px; }
-  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-  h2 { font-size: 15px; font-weight: 600; margin: 0; }
-  .head .count { font-size: 12px; color: var(--mute); }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  /* top bar and tabs */
+  .top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .top-in { max-width: 1320px; margin: 0 auto; padding: 0 24px; display: flex; align-items: stretch; gap: 28px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; letter-spacing: -.02em; padding: 12px 0; }
+  .logo { width: 30px; height: 12px; position: relative; } /* three stations on a line */
+  .logo::before { content: ""; position: absolute; left: 2px; right: 2px; top: 4px; height: 4px; border-radius: 2px; background: var(--ink); }
+  .logo::after { content: ""; position: absolute; top: 0; left: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 3px solid var(--ink); box-sizing: border-box; box-shadow: 18px 0 0 -3px var(--live), 18px 0 0 0 var(--live); }
+  .tabs { display: flex; gap: 4px; align-items: stretch; }
+  .tab { border: 0; background: none; padding: 0 14px; cursor: pointer; font-weight: 600; color: var(--mute); border-bottom: 3px solid transparent; display: flex; align-items: center; gap: 8px; }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected=true] { color: var(--ink); border-bottom-color: var(--ink); }
+  .badge { min-width: 20px; padding: 1px 6px 0; border-radius: 10px; font-size: 12px; font-weight: 700; text-align: center; background: var(--soft); color: var(--mute); }
+  .badge.bad { background: var(--bad); color: var(--bg); }
+  .badge.run { background: var(--live); color: var(--on-live); }
+  .grow { flex: 1; min-width: 0; }
+  .repo { align-self: center; font-size: 13px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32ch; }
+
+  main { max-width: 1320px; margin: 0 auto; padding: 28px 24px 80px; }
+  #msg { color: var(--bad); font-weight: 600; }
+  #msg:not(:empty), #note:not(:empty) { margin-bottom: 16px; }
+  #note { color: var(--mute); }
+  h2 { font-size: 20px; font-weight: 700; letter-spacing: -.015em; margin: 0; }
+  h3 { font-size: 16px; font-weight: 700; margin: 0; }
+  .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .head .count { font-size: 13px; color: var(--mute); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 
   /* controls */
   .field { padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); min-width: 0; }
   input.field::placeholder { color: var(--mute); }
   .btn { padding: 7px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; font-weight: 600; }
-  .btn:hover:not(:disabled) { background: var(--soft); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-  .btn.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+  .btn:hover:not(:disabled) { border-color: var(--ink); }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
   .btn.danger { color: var(--bad); }
+  .btn.link { border: 0; background: none; padding: 0; color: var(--live); text-decoration: underline; text-underline-offset: 3px; }
   .btn:disabled { opacity: .45; cursor: default; }
+  .chip { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px 0; font-size: 12px; color: var(--mute); background: var(--panel); white-space: nowrap; }
+  .steps .chip, .outs .chip { font-size: 13px; }
+  .chip.taken { border-color: var(--live); color: var(--live); background: var(--live-soft); font-weight: 600; }
+  .chip.limit { border-style: dashed; }
+  .chip.good { background: var(--ok-soft); color: var(--ok); border-color: transparent; font-weight: 600; }
+  .chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; font-weight: 600; }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; font-weight: 600; }
+  .chip.run { background: var(--live-soft); color: var(--live); border-color: transparent; font-weight: 600; }
+  pre { font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--soft); border-radius: 6px; padding: 10px 12px; margin: 0; max-height: 340px; overflow: auto; }
+  .empty { padding: 32px; text-align: center; color: var(--mute); }
+
+  /* the board: one row per run, one column per station */
+  .board-wrap { overflow-x: auto; margin: 0 -24px; padding: 0 24px 6px; }
+  .board { --cols: minmax(160px, 260px) repeat(var(--n, 7), minmax(104px, 1fr)) minmax(100px, 150px); min-width: calc(160px + var(--n, 7) * 104px + 100px); }
+  .b-head, .lane { display: grid; grid-template-columns: var(--cols); align-items: center; }
+  .b-head { position: sticky; top: 0; padding-bottom: 10px; border-bottom: 2px solid var(--ink); }
+  .b-head > span { font-size: 13px; color: var(--mute); }
+  .b-head .r { text-align: right; padding-right: 4px; }
+  .stn { border: 1px solid var(--line); background: var(--panel); cursor: pointer; padding: 7px 10px 5px; margin: 0 3px; font-weight: 700; font-size: 14px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; text-align: center; border-radius: 6px; white-space: nowrap; color: var(--ink); }
+  .stn:hover { border-color: var(--ink); }
+  .stn[aria-pressed=true] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .grp { font-size: 13px; font-weight: 600; color: var(--mute); padding: 18px 0 4px; }
+  .lane { --edge: var(--live); min-height: 72px; border-bottom: 1px solid var(--line); cursor: pointer; position: relative; }
+  .lane:hover { background: color-mix(in srgb, var(--soft) 55%, transparent); }
+  .lane.sel { background: var(--panel); box-shadow: inset 4px 0 0 var(--edge); }
+  .lane.good { --edge: var(--ok); } .lane.bad { --edge: var(--bad); } .lane.warn { --edge: var(--warn); } .lane.queued { --edge: var(--line); cursor: default; }
+  .who { border: 0; background: none; text-align: left; cursor: pointer; padding: 10px 12px 10px 14px; display: grid; gap: 1px; min-width: 0; }
+  .who b { font-size: 19px; font-weight: 800; line-height: 1.1; letter-spacing: -.02em; }
+  .who .t, .who .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; color: var(--mute); }
+  .who .t { color: var(--ink); font-size: 14px; }
+  .who .s.cmd { font-family: var(--mono); font-size: 12px; }
+  /* a station cell: the line runs through its middle, left half and right half lit separately */
+  .st { position: relative; height: 72px; display: grid; place-items: center; }
+  .st::before, .st::after { content: ""; position: absolute; top: 34px; height: 4px; width: 50%; background: var(--line); opacity: .7; }
+  .st::before { left: 0; } .st::after { right: 0; }
+  .st:first-of-type::before { display: none; }
+  .st.l::before, .st.r::after { background: var(--edge); opacity: 1; }
+  .dot { position: relative; z-index: 1; width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .st.done .dot { width: 18px; height: 18px; background: var(--bg); border: 4px solid var(--edge); }
+  .st.skip .dot { width: 8px; height: 8px; background: var(--bg); border: 2px solid var(--edge); }
+  .st.bounce .dot { width: 18px; height: 18px; background: var(--warn-soft); border: 4px solid var(--warn); }
+  .st.live .dot { width: 22px; height: 22px; background: var(--edge); border: 4px solid var(--bg); outline: 2px solid var(--edge); animation: pulse 1.6s ease-out infinite; }
+  .st.fail .dot { width: 24px; height: 24px; background: var(--bad); display: grid; place-items: center; }
+  .st.fail .dot::after { content: "\00d7"; color: var(--bg); font-weight: 800; font-size: 18px; line-height: 1; margin-top: 2px; }
+  .st small { position: absolute; top: 4px; left: calc(50% + 10px); font-size: 12px; font-weight: 700; color: var(--ink); }
+  .st em { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-style: normal; font-size: 12px; font-weight: 700; white-space: nowrap; padding: 1px 8px 0; border-radius: 999px; }
+  .st em.no { background: var(--bad-soft); } .st em.wait { background: var(--warn-soft); }
+  .end { text-align: right; padding-right: 4px; display: grid; gap: 1px; }
+  .end b { font-size: 15px; font-weight: 700; }
+  .end b.good { color: var(--ok); } .end b.bad { color: var(--bad); } .end b.warn { color: var(--warn); } .end b.run { color: var(--live); }
+  .end span { font-size: 13px; color: var(--mute); }
+
+  /* the selected run */
+  .runview { margin-top: 40px; }
+  .run-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  #issue { font-size: 28px; font-weight: 800; letter-spacing: -.03em; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px 1px 8px; font-size: 13px; font-weight: 700; background: var(--soft); color: var(--mute); }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill.run { background: var(--live-soft); color: var(--live); } .pill.run::before { animation: blink 1.2s ease-in-out infinite; }
+  .pill.good { background: var(--ok-soft); color: var(--ok); } .pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  #line { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #cost { font-size: 18px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px 48px; padding: 16px 0 4px; }
+  .stat span { display: block; font-size: 13px; color: var(--mute); }
+  .stat b { display: block; font-size: 22px; font-weight: 700; letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-top: 22px; align-items: start; }
+  #detail { padding: 16px 18px; }
+  .sub { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
+  .outs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .feed { background: var(--term); color: var(--term-ink); border-radius: 10px; overflow: hidden; }
+  .feed h3 { padding: 12px 16px 6px; font-size: 13px; font-weight: 600; color: var(--term-mute); }
+  #feed { font: 12px/1.6 var(--mono); max-height: 380px; overflow: auto; padding: 0 16px 14px; }
+  #feed div { white-space: pre-wrap; word-break: break-word; }
+  #feed .t { color: var(--term-mute); margin-right: 10px; }
+  #feed .tool { color: var(--term-tool); } #feed .error { color: var(--term-bad); }
+  .steps { margin-top: 28px; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  th { color: var(--mute); font-weight: 600; font-size: 13px; }
+  td.r, th.r { text-align: right; }
+  tbody tr:hover { background: var(--soft); }
+  .costcell { position: relative; }
+  .costcell i { position: absolute; left: 12px; right: 12px; bottom: 4px; height: 3px; border-radius: 2px; background: linear-gradient(to left, var(--live) var(--w, 0%), transparent 0); opacity: .7; }
+  #deniedBox { margin-top: 28px; }
+  .den + .den { margin-top: 12px; }
+  .den pre { margin-top: 6px; }
+
+  /* errors: one block per run, each problem expandable */
+  .err-run { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; padding: 22px 0; border-top: 1px solid var(--line); }
+  .err-run:first-child { border-top: 2px solid var(--ink); }
+  .err-run.fixed { opacity: .72; }
+  .err-who b { display: block; font-size: 24px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+  .err-who p { margin: 4px 0 10px; font-size: 13px; color: var(--mute); }
+  .err-list { display: grid; gap: 8px; }
+  .err-list details { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--bad); border-radius: 6px; }
+  .err-list details.minor { border-left-color: var(--warn); }
+  .err-list summary { cursor: pointer; padding: 10px 14px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .err-list summary b { font-weight: 700; }
+  .err-list details.flat summary { cursor: default; list-style: none; pointer-events: none; }
+  .err-list details.flat summary::-webkit-details-marker { display: none; }
+  .err-list .body { padding: 0 14px 14px; display: grid; gap: 8px; }
+
+  /* start runs */
+  .runbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 14px; }
+  .runbar label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--mute); }
+  .runbar input[type=number] { width: 74px; }
+  .issues { display: none; margin-top: 28px; } .issues.on { display: block; }
+  .igrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; max-height: 420px; overflow: auto; padding: 2px; }
+  .icard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .icard:hover { border-color: var(--ink); }
+  .icard input { position: absolute; opacity: 0; pointer-events: none; }
+  .icard:has(input:focus-visible) { outline: 2px solid var(--live); outline-offset: 2px; }
+  .icard:has(input:checked) { border-color: var(--live); background: var(--live-soft); }
+  .icard.busy { cursor: default; opacity: .75; } .icard.busy:hover { border-color: var(--line); }
+  .i-top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--mute); }
+  .i-num { font-weight: 800; color: var(--ink); font-size: 14px; }
+  .check { margin-left: auto; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; background: var(--panel); }
+  .icard:has(input:checked) .check { background: var(--live); border-color: var(--live); }
+  .icard:has(input:checked) .check::after { content: ""; width: 8px; height: 4px; border: 2px solid var(--on-live); border-top: 0; border-right: 0; transform: rotate(-45deg) translateY(-1px); }
+  .i-title { font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .i-subs { font-size: 12px; color: var(--mute); display: flex; align-items: center; gap: 8px; }
+  .bar { width: 64px; height: 4px; border-radius: 2px; background: var(--soft); overflow: hidden; flex: none; }
+  .bar i { display: block; height: 100%; background: var(--live); }
+  .i-labels { display: flex; flex-wrap: wrap; gap: 4px; }
+  .lbl { font-size: 11px; border-radius: 999px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--c, var(--mute)) 45%, transparent); background: color-mix(in srgb, var(--c, var(--mute)) 14%, transparent); }
+  .controls { margin-top: 12px; }
   .folder-picker { width: min(680px, calc(100% - 32px)); max-height: 85vh; padding: 20px; color: var(--ink); }
-  .folder-picker::backdrop { background: rgba(0, 0, 0, .4); }
+  .folder-picker::backdrop { background: rgba(10, 14, 24, .45); }
   .folder-picker label { display: flex; flex-direction: column; gap: 4px; }
   .folder-picker ul { list-style: none; padding: 0; max-height: 40vh; overflow: auto; }
   .folder-picker li + li { margin-top: 6px; }
   .folder-picker li button { width: 100%; text-align: left; overflow-wrap: anywhere; }
   #folderStatus { overflow-wrap: anywhere; }
 
-  /* issues */
-  .issues { display: none; } .issues.on { display: block; }
-  .igrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; max-height: 372px; overflow: auto; padding: 2px; }
-  .icard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
-  .icard:hover { border-color: var(--accent); }
-  .icard input { position: absolute; opacity: 0; pointer-events: none; }
-  .icard:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .icard:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
-  .icard.busy { cursor: default; opacity: .75; } .icard.busy:hover { border-color: var(--line); }
-  .i-top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--mute); }
-  .i-num { font-weight: 600; color: var(--ink); }
-  .check { margin-left: auto; width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--line); display: grid; place-items: center; background: var(--panel); }
-  .icard:has(input:checked) .check { background: var(--accent); border-color: var(--accent); }
-  .icard:has(input:checked) .check::after { content: ""; width: 9px; height: 5px; border: 2px solid var(--on-accent); border-top: 0; border-right: 0; transform: rotate(-45deg) translateY(-1px); }
-  .i-title { font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .i-subs { font-size: 12px; color: var(--mute); display: flex; align-items: center; gap: 8px; }
-  .i-subs .bar { width: 64px; margin: 0; flex: none; }
-  .i-labels { display: flex; flex-wrap: wrap; gap: 4px; }
-  .lbl { font-size: 11px; border-radius: 999px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--c, var(--mute)) 45%, transparent); background: color-mix(in srgb, var(--c, var(--mute)) 14%, transparent); }
-  .empty { padding: 28px; text-align: center; color: var(--mute); }
-  .runbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px; }
-  .runbar label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--mute); }
-  .runbar input[type=number] { width: 74px; }
-  .queue { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; font-size: 12px; align-items: center; }
-  button.chip { cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
-  button.chip[aria-pressed=true] { outline: 2px solid currentColor; outline-offset: 1px; }
-
-  /* parallel runs: one lane per job, one track segment per pipeline state */
-  .lanes { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
-  .lane { --edge: var(--accent); position: relative; overflow: hidden; text-align: left; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 13px 21px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; min-width: 0; }
-  .lane::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--edge); }
-  .lane:hover { border-color: var(--edge); }
-  .lane[aria-pressed=true] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
-  .lane.warn { --edge: var(--warn); } .lane.good { --edge: var(--ok); } .lane.bad { --edge: var(--bad); }
-  .lane.queued { --edge: var(--line); cursor: default; background: transparent; border-style: dashed; }
-  .lane.queued:hover { border-color: var(--line); }
-  .l-top, .l-foot { display: flex; align-items: center; gap: 8px; font-size: 12px; min-width: 0; }
-  .l-top .i-num { font-size: 20px; font-weight: 700; line-height: 1; letter-spacing: -.01em; }
-  .l-foot .grow { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .l-foot .cmd { font-family: var(--mono); font-size: 11px; }
-  .l-title { font-weight: 500; font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 18px; }
-  .track { display: flex; gap: 2px; }
-  .seg { flex: 1; height: 10px; border-radius: 2px; background: var(--soft); box-shadow: inset 0 0 0 1px var(--line); }
-  .seg.visited { background: var(--ok); box-shadow: none; }
-  .seg.failed { background: var(--bad); box-shadow: none; }
-  .seg.stale { background: var(--warn); box-shadow: none; }
-  .seg.live { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); animation: pulse 1.2s ease-in-out infinite; }
-  #msg { color: var(--bad); font-size: 13px; margin-top: 8px; }
-  #note { color: var(--mute); font-size: 13px; margin-top: 8px; }
-
-  /* run summary */
-  .stats { display: flex; flex-wrap: wrap; gap: 10px 40px; padding: 2px 0 4px; }
-  .stat { min-width: 0; }
-  .stat span { display: block; font-size: 12px; color: var(--mute); }
-  .stat b { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.02em; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  details.feed { margin-top: 14px; background: var(--term); color: var(--term-ink); border-radius: 8px; overflow: hidden; }
-  details.feed summary { cursor: pointer; padding: 9px 14px; font: 12px var(--mono); color: var(--term-mute); }
-  #feed { font: 12px/1.6 var(--mono); max-height: 280px; overflow: auto; padding: 0 14px 12px; }
-  #feed div { white-space: pre-wrap; word-break: break-word; }
-  #feed .t { color: var(--term-mute); margin-right: 10px; }
-  #feed .tool { color: var(--term-tool); } #feed .error { color: var(--term-bad); }
-
-  /* pipeline */
-  .pipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 18px; overflow: hidden; padding: 4px 0 4px 4px; margin: -4px 0 -4px -4px; } /* clips the connector after a row's last node */
-  .node { position: relative; text-align: left; display: flex; flex-direction: column; gap: 3px; padding: 11px 12px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
-  .node:hover { border-color: var(--accent); }
-  .node:not(:last-child)::after { content: ""; position: absolute; right: -19px; top: 50%; width: 18px; height: 2px; background: var(--line); }
-  .node.visited:not(:last-child)::after { background: var(--ok); opacity: .5; }
-  .node[aria-pressed=true] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .n-top { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--mute); }
-  .dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--line); }
-  .node.visited .dot { background: var(--ok); border-color: var(--ok); }
-  .node.failed .dot { background: var(--bad); border-color: var(--bad); }
-  .node.live .dot { background: var(--accent); border-color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
-  .node.live { border-color: var(--accent); }
-  .node b { font-size: 14px; }
-  .node .res { font-size: 12px; font-weight: 600; min-height: 18px; }
-  .node .cost { font-size: 12px; color: var(--mute); min-height: 16px; }
-  .bar { height: 4px; border-radius: 2px; background: var(--soft); overflow: hidden; margin-top: 4px; }
-  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
-  #detail { margin-top: 12px; padding: 14px 16px; }
-  #detail h3 { margin: 0 0 2px; font-size: 15px; }
-  .sub { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
-  .outs { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--mute); background: var(--panel); white-space: nowrap; }
-  .chip.taken { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
-  .chip.limit { border-style: dashed; }
-  .chip.good { background: var(--ok-soft); color: var(--ok); border-color: transparent; font-weight: 600; }
-  .chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; font-weight: 600; }
-  .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; font-weight: 600; }
-  .chip.run { background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 600; }
-  pre { font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--soft); border-radius: 6px; padding: 10px 12px; margin: 0; max-height: 340px; overflow: auto; }
-
-  /* steps */
-  .tablewrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  tr:last-child td { border-bottom: 0; }
-  th { color: var(--mute); font-weight: 500; font-size: 12px; background: var(--soft); }
-  th:first-child { border-top-left-radius: 8px; } th:last-child { border-top-right-radius: 8px; }
-  td.r, th.r { text-align: right; }
-  tbody tr:hover { background: var(--soft); }
-  .costcell { position: relative; }
-  .costcell i { position: absolute; left: 12px; right: 12px; bottom: 4px; height: 3px; border-radius: 2px; background: linear-gradient(to left, var(--accent) var(--w, 0%), transparent 0); opacity: .7; }
-  .den + .den { margin-top: 12px; }
-  .den pre { margin-top: 6px; }
-
+  @media (max-width: 860px) {
+    .split { grid-template-columns: 1fr; }
+    .err-run { grid-template-columns: 1fr; gap: 10px; }
+  }
   @media (max-width: 640px) {
     .top-in, main { padding-left: 16px; padding-right: 16px; }
-    .node:not(:last-child)::after { display: none; }
-    .pipe { gap: 10px; grid-template-columns: repeat(2, 1fr); }
+    .top-in { gap: 0 16px; }
+    .tab { padding: 10px 8px; }
+    .repo { display: none; }
+    .board-wrap { margin: 0 -16px; padding: 0 16px 6px; }
+    .board { --cols: 150px repeat(var(--n, 7), 104px) 110px; min-width: 0; }
   }
 </style>
 </head>
 <body>
 <header class="top"><div class="top-in">
-  <div class="brand"><span class="logo"></span>agent-sm</div>
-  <span class="tag" id="issue">no run</span>
-  <span class="pill" id="pill">idle</span>
-  <span class="pill run" id="jobs" hidden></span>
-  <div class="grow mute" id="line">waiting for data...</div>
-  <b class="num" id="cost"></b>
+  <div class="brand"><span class="logo" aria-hidden="true"></span>agent-sm</div>
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button class="tab" role="tab" id="tabPipe" data-view="pipe" aria-selected="true" aria-controls="viewPipe">Pipeline <span class="badge run" id="jobs" hidden></span></button>
+    <button class="tab" role="tab" id="tabErr" data-view="errors" aria-selected="false" aria-controls="viewErr">Errors <span class="badge" id="errCount">0</span></button>
+    <button class="tab" role="tab" id="tabStart" data-view="start" aria-selected="false" aria-controls="viewStart">Start runs</button>
+  </nav>
+  <span class="grow"></span>
+  <span class="repo" id="repoName"></span>
 </div></header>
 
 <main>
-  <section class="panel runbar" aria-label="Run setup">
-    <label>Repository path <input class="field" id="repoPath" type="text" size="36" placeholder="/path/to/git/repository"></label>
-    <button class="btn" id="browseRepo" type="button">Browse folders</button>
-    <label>Language profile <select class="field" id="language"><option value="auto">Auto detect</option><option value="server">Server profile</option><option value="go">Go</option><option value="dotnet">.NET example (Inventory)</option></select></label>
-    <label>Agent <select class="field" id="agent"><option value="copilot">Copilot</option><option value="claude">Claude</option></select></label>
-    <button class="btn primary" id="selectRepo">Use setup</button>
-  </section>
   <div id="msg" role="alert"></div>
   <div id="note" role="status"></div>
-  <dialog class="panel folder-picker" id="folderPicker" aria-labelledby="folderTitle">
-    <div class="head"><h2 id="folderTitle">Choose a repository folder</h2><button class="btn" id="folderCancel" type="button">Cancel</button></div>
-    <p class="mute">Folders on the computer running agent-sm. Select a Git working tree; nothing is uploaded.</p>
-    <form class="head" id="folderForm">
-      <label class="grow">Folder path <input class="field" id="folderPath" type="text" autocomplete="off"></label>
-      <button class="btn" type="submit">Go</button>
-      <button class="btn" id="folderHome" type="button">Home</button>
-      <button class="btn" id="folderUp" type="button" disabled>Up</button>
-    </form>
-    <p id="folderStatus" role="status"></p>
-    <ul id="folderList" aria-label="Subfolders"></ul>
-    <button class="btn primary" id="folderUse" type="button" disabled>Use this repository</button>
-  </dialog>
-  <section class="issues" id="issuesPanel">
-    <div class="head">
-      <h2>Open issues</h2><span class="count" id="issueCount"></span>
-      <input class="field grow" type="text" id="filter" placeholder="Filter by number, title or label" aria-label="Filter issues">
-      <button class="btn" id="refresh">Refresh</button>
-    </div>
-    <div class="igrid" id="issueGrid"></div>
-    <div class="panel runbar">
-      <b id="selCount">Nothing selected</b>
-      <span class="grow"></span>
-      <label>Publish <select class="field" id="publish"><option value="">local branch only</option><option value="pr">open a draft PR</option></select></label>
-      <span id="provider"></span>
-      <label>Limit per step <span id="budgetUnit"></span> <input class="field" type="number" id="budget" value="2" min="0.01" step="0.01" required></label>
-      <span class="mute" id="runBudget"></span>
-      <label title="How many queued issues run at once, each in its own worktree. Applies to every queue on this server.">In parallel <input class="field" type="number" id="parallel" value="1" min="1" max="16" step="1" style="width:4.5em"></label>
-      <label title="Save prompts, responses and available tool messages locally. May contain sensitive code or output."><input type="checkbox" id="transcripts"> Save transcripts</label>
-      <label title="Claude only: bypass permission approvals to measure tool use. Not transcript logging."><input type="checkbox" id="audit"> permission audit</label>
-      <button class="btn danger" id="stopBtn" disabled>Stop</button>
-      <button class="btn primary" id="runBtn" disabled>Run</button>
-    </div>
-    <div class="panel runbar" id="modelBar"><b>Models</b><span class="mute" style="font-size:12px">per step, for the runs you start next</span><span class="grow"></span><span id="models" style="display:contents"></span></div>
+
+  <section id="viewPipe" role="tabpanel" aria-labelledby="tabPipe">
+    <div class="board-wrap"><div class="board" id="board">
+      <div class="b-head" id="pipe"></div>
+      <div id="lanes"></div>
+    </div></div>
+
+    <section class="runview" aria-label="Selected run">
+      <div class="run-head">
+        <span id="issue">no run</span>
+        <span class="pill" id="pill">idle</span>
+        <span class="grow mute" id="line">waiting for data...</span>
+        <b class="num" id="cost"></b>
+        <button class="btn" id="follow" type="button" hidden>Follow newest run</button>
+      </div>
+      <p class="mute" id="runHint" hidden></p>
+      <div class="stats" id="cards"></div>
+      <div class="split">
+        <div class="panel" id="detail"></div>
+        <div class="feed"><h3 id="feedSum">Agent activity</h3><div id="feed"></div></div>
+      </div>
+      <div class="steps">
+        <div class="head"><h3>Steps</h3><span class="count" id="stepCount"></span></div>
+        <div class="panel tablewrap"><table><thead><tr><th>#</th><th>state</th><th>unit</th><th>result</th><th>model</th><th class="r">turns</th><th class="r">min</th><th class="r">tools</th><th class="r">denied</th><th class="r">step usage</th><th class="r">run usage</th></tr></thead><tbody id="steps"></tbody></table></div>
+      </div>
+      <div id="deniedBox" hidden>
+        <div class="head"><h3>Denied commands</h3><span class="count">The allow list refused these. Add them to the state's allow list or change its prompt.</span></div>
+        <div class="panel" style="padding:14px 16px" id="denied"></div>
+      </div>
+    </section>
   </section>
 
-  <section id="lanesBox" hidden>
-    <div class="head"><h2>Running now</h2><span class="count" id="laneCount"></span></div>
-    <div class="lanes" id="lanes"></div>
-    <div class="queue" id="recent"></div>
+  <section id="viewErr" role="tabpanel" aria-labelledby="tabErr" hidden>
+    <div class="head"><h2>Errors</h2><span class="count">Failed steps, denied commands and runs that stopped, newest run first. Runs that recovered are dimmed.</span></div>
+    <div id="errors"></div>
   </section>
 
-  <section>
-    <div class="head"><h2 id="runTitle">Newest run</h2><span class="count" id="runHint"></span><span class="grow"></span><button class="btn" id="follow" type="button" hidden>Follow newest run</button></div>
-    <div class="stats" id="cards"></div>
-    <details class="feed" id="feedBox">
-      <summary id="feedSum">Agent activity</summary>
-      <div id="feed"></div>
-    </details>
-  </section>
-
-  <section>
-    <div class="head"><h2>Pipeline</h2><span class="count">Select a state to see where its results lead and what it last returned.</span></div>
-    <div class="pipe" id="pipe"></div>
-    <div class="panel" id="detail"></div>
-  </section>
-
-  <section>
-    <div class="head"><h2>Steps</h2><span class="count" id="stepCount"></span></div>
-    <div class="panel tablewrap"><table><thead><tr><th>#</th><th>state</th><th>unit</th><th>result</th><th>model</th><th class="r">turns</th><th class="r">min</th><th class="r">tools</th><th class="r">denied</th><th class="r">step usage</th><th class="r">run usage</th></tr></thead><tbody id="steps"></tbody></table></div>
-  </section>
-
-  <section id="deniedBox" hidden>
-    <div class="head"><h2>Denied commands</h2><span class="count">The agent asked for these and the allow list refused them. Add them to the state's allow list or change its prompt.</span></div>
-    <div class="panel" style="padding:14px 16px" id="denied"></div>
+  <section id="viewStart" role="tabpanel" aria-labelledby="tabStart" hidden>
+    <div class="head"><h2>Start runs</h2></div>
+    <section class="panel runbar" aria-label="Run setup">
+      <label>Repository path <input class="field" id="repoPath" type="text" size="36" placeholder="/path/to/git/repository"></label>
+      <button class="btn" id="browseRepo" type="button">Browse folders</button>
+      <label>Language profile <select class="field" id="language"><option value="auto">Auto detect</option><option value="server">Server profile</option><option value="go">Go</option><option value="dotnet">.NET example (Inventory)</option></select></label>
+      <label>Agent <select class="field" id="agent"><option value="copilot">Copilot</option><option value="claude">Claude</option></select></label>
+      <button class="btn primary" id="selectRepo">Use setup</button>
+    </section>
+    <dialog class="panel folder-picker" id="folderPicker" aria-labelledby="folderTitle">
+      <div class="head"><h2 id="folderTitle">Choose a repository folder</h2><span class="grow"></span><button class="btn" id="folderCancel" type="button">Cancel</button></div>
+      <p class="mute">Folders on the computer running agent-sm. Select a Git working tree; nothing is uploaded.</p>
+      <form class="head" id="folderForm">
+        <label class="grow">Folder path <input class="field" id="folderPath" type="text" autocomplete="off"></label>
+        <button class="btn" type="submit">Go</button>
+        <button class="btn" id="folderHome" type="button">Home</button>
+        <button class="btn" id="folderUp" type="button" disabled>Up</button>
+      </form>
+      <p id="folderStatus" role="status"></p>
+      <ul id="folderList" aria-label="Subfolders"></ul>
+      <button class="btn primary" id="folderUse" type="button" disabled>Use this repository</button>
+    </dialog>
+    <section class="issues" id="issuesPanel">
+      <div class="head">
+        <h3>Open issues</h3><span class="count" id="issueCount"></span>
+        <input class="field grow" type="text" id="filter" placeholder="Filter by number, title or label" aria-label="Filter issues">
+        <button class="btn" id="refresh">Refresh</button>
+      </div>
+      <div class="igrid" id="issueGrid"></div>
+      <div class="panel runbar controls">
+        <b id="selCount">Nothing selected</b>
+        <span class="grow"></span>
+        <label>Publish <select class="field" id="publish"><option value="">local branch only</option><option value="pr">open a draft PR</option></select></label>
+        <span id="provider"></span>
+        <label>Limit per step <span id="budgetUnit"></span> <input class="field" type="number" id="budget" value="2" min="0.01" step="0.01" required></label>
+        <span class="mute" id="runBudget"></span>
+        <label title="How many queued issues run at once, each in its own worktree. Applies to every queue on this server.">In parallel <input class="field" type="number" id="parallel" value="1" min="1" max="16" step="1" style="width:4.5em"></label>
+        <label title="Save prompts, responses and available tool messages locally. May contain sensitive code or output."><input type="checkbox" id="transcripts"> Save transcripts</label>
+        <label title="Claude only: bypass permission approvals to measure tool use. Not transcript logging."><input type="checkbox" id="audit"> Permission audit</label>
+        <button class="btn danger" id="stopBtn" disabled>Stop</button>
+        <button class="btn primary" id="runBtn" disabled>Run</button>
+      </div>
+      <div class="panel runbar controls" id="modelBar"><b>Models</b><span class="mute" style="font-size:12px">per step, for the runs you start next</span><span class="grow"></span><span id="models" style="display:contents"></span></div>
+    </section>
   </section>
 </main>
 <script>
 const TOKEN = "__TOKEN__";
 const DEFAULT_REPO = __REPO__;
 const DEFAULT_AGENT = __AGENT__;
-let OLD = [], QERR = "", EDGES = [], ISSUES = [], QUEUE = {}, SEL = new Set(), CAN_RUN = false, BUSY = false, RUNNING = false, PICKED = null, TIMER, WATCH = null, LANES = {};
+let OLD = [], QERR = "", EDGES = [], ISSUES = [], QUEUE = {}, SEL = new Set(), CAN_RUN = false, BUSY = false, RUNNING = false, PICKED = null, TIMER, WATCH = null;
+let LANES = {}, DONE = {}, NEWEST = null, CUR = { issue: null, sel: null };
 let SELECTED_REPO = "", SELECTED_LANGUAGE = "auto", SELECTED_AGENT = DEFAULT_AGENT;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-// put sets an element's HTML only when it changed, so scroll positions and focus survive a poll.
+// put sets an element's HTML only when it changed, so scroll positions, open details and focus survive a poll.
 const LAST = {};
 function put(id, html) { if (LAST[id] !== html) { LAST[id] = html; $(id).innerHTML = html; } }
 const fmt = (n, d = 2) => (n == null ? "-" : Number(n).toFixed(d));
@@ -290,6 +340,8 @@ const BADOUT = ["fail", "blocked", "invalid", "split", "escalate", "timeout", "o
 const outCls = o => BADOUT.includes(o) ? "no" : (o === "more" ? "wait" : "ok");
 const exitCls = x => x === "ready" ? "good" : (x === "stopped" || x === "split" ? "warn" : "bad");
 const pretty = r => { try { return JSON.stringify(JSON.parse(r), null, 2); } catch { return r; } }; // a cut result is not valid JSON
+const stations = () => [...new Set(EDGES.map(e => e.from))];
+const titleOf = n => (ISSUES.find(i => i.number === n) || {}).title || "";
 function age(iso) {
   const m = (Date.now() - Date.parse(iso)) / 60000;
   return m < 60 ? Math.max(1, Math.round(m)) + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago";
@@ -337,25 +389,121 @@ function summarize(data) {
   const unknown = usageEvent.sessions_with_unknown_cost || usageEvent.usage_unknown;
   const pillCls = exitEv ? exitCls(exitEv.exit) : stale ? "warn" : live ? "run" : "";
   const pillText = exitEv ? exitEv.exit : stale ? "no update for " + idleMin + " min" : live ? live : "idle";
-  return { st, exitEv, usage, stepUsage, steps, per, taken, total, session, lastStep, live, stale, cost, unknown, pillCls, pillText };
+  return { st, exitEv, usage, stepUsage, steps, per, taken, total, session, lastStep, live, stale, idleMin, cost, unknown, pillCls, pillText };
 }
 
-// track draws one segment per pipeline state: done, failed, running or not reached.
-function track(sum) {
-  return [...new Set(EDGES.map(e => e.from))].map(name => {
-    const p = sum.per[name], failed = p && BADOUT.includes(p.last.out) && sum.live !== name;
-    const cls = sum.live === name ? (sum.stale ? "stale" : "live") : failed ? "failed" : p ? "visited" : "";
-    return `<i class="seg ${cls}" title="${name}${p ? ": " + p.last.out : ""}"></i>`;
+// stops draws one row's line: lit from the first station to the furthest one reached; a run that
+// ended badly stops at a red station; a station whose last result sent the run back is amber.
+function stops(sum) {
+  const names = stations();
+  const failAt = sum && sum.exitEv && sum.exitEv.exit !== "ready" && sum.lastStep ? sum.lastStep.state : null;
+  let far = -1;
+  if (sum) names.forEach((n, i) => { if (sum.per[n] || sum.live === n) far = i; });
+  const through = sum && sum.exitEv && sum.exitEv.exit === "ready";
+  return names.map((name, i) => {
+    const p = sum && sum.per[name];
+    const dot = !sum ? "" : sum.live === name ? (sum.stale ? "live" : "live") : name === failAt ? "fail"
+      : p && BADOUT.includes(p.last.out) ? "bounce" : p ? "done" : i < far ? "skip" : "";
+    const seg = (i > 0 && i <= far ? " l" : "") + (i < far || (i === far && through) ? " r" : "");
+    const tip = name + (p ? ": " + p.last.out + (p.visits > 1 ? ", " + p.visits + " visits" : "") + (p.cost ? ", " + sum.usage(p.cost) : "") : sum && sum.live === name ? ": running" : ": not reached");
+    const note = dot === "fail" || dot === "bounce" ? `<em class="${dot === "fail" ? "no" : "wait"}">${esc(p.last.out)}</em>` : "";
+    return `<span class="st ${dot}${seg}" title="${esc(tip)}"><i class="dot"></i>${p && p.visits > 1 ? `<small>${p.visits}x</small>` : ""}${note}</span>`;
   }).join("");
+}
+
+// rows lists every run the page knows: running, waiting, finished in this server, and the newest
+// run on disk when it is none of those (a CLI run, or one from before the server started).
+function rows() {
+  const running = QUEUE.running || [], queued = QUEUE.queued || [];
+  const out = running.map(j => ({ n: j.issue, job: j, kind: "running", sum: LANES[j.issue] && !LANES[j.issue].exitEv ? LANES[j.issue] : null }));
+  queued.forEach(j => out.push({ n: j.issue, job: j, kind: "queued", sum: null }));
+  const seen = new Set(out.map(r => r.n));
+  (QUEUE.history || []).slice(-8).reverse().forEach(j => {
+    if (seen.has(j.issue)) return;
+    seen.add(j.issue);
+    out.push({ n: j.issue, job: j, kind: "done", sum: (DONE[doneKey(j)] || {}).sum || null });
+  });
+  if (NEWEST && !seen.has(NEWEST.n)) out.push({ n: NEWEST.n, job: null, kind: "latest", sum: NEWEST.sum });
+  return out;
+}
+const doneKey = j => j.issue + "|" + (j.started || "") + "|" + (j.exit || "");
+
+function renderBoard() {
+  const names = stations(), list = rows();
+  $("board").style.setProperty("--n", names.length);
+  put("pipe", `<span>Run</span>` + names.map(n => `<button class="stn" type="button" data-s="${n}" aria-pressed="${CUR.sel === n}" title="Show where ${n}'s results lead in the selected run">${n}</button>`).join("") + `<span class="r">Result</span>`);
+  const groups = { running: "Running now", queued: "Waiting for a slot", done: "Finished here", latest: "Latest run on disk" };
+  let prev = "";
+  put("lanes", list.map(r => {
+    const s = r.sum, j = r.job || {};
+    const starting = r.kind === "running" && !s;
+    const cls = r.kind === "queued" ? "queued" : starting ? "run" : r.kind === "done" && !s ? exitCls(j.exit) : s ? (s.pillCls || "run") : "run";
+    const line = r.kind === "queued" ? "waiting for a free slot" : starting ? "starting in its worktree"
+      : s && s.session && s.st.last_tool && !s.exitEv ? s.st.last_tool + (s.st.last_command ? " " + s.st.last_command : "")
+      : s && s.live ? (s.stale ? "no update for " + s.idleMin + " min" : s.live + " is running")
+      : j.err ? j.err : s ? s.steps.length + " steps" : "";
+    const isCmd = s && s.session && s.st.last_tool && !s.exitEv;
+    const endWord = r.kind === "queued" ? "queued" : starting ? "starting" : s ? (s.pillCls === "run" ? "running" : s.exitEv ? s.pillText : s.stale ? "stalled" : "idle") : (j.exit || "failed");
+    const endCls = r.kind === "queued" ? "" : starting ? "run" : s ? s.pillCls : exitCls(j.exit);
+    const sub = s ? s.usage(s.cost) + (s.unknown ? " +?" : "") : "";
+    const elapsed = r.kind === "running" && j.started ? sec(Math.max(0, Math.round((Date.now() - Date.parse(j.started)) / 1000))) : "";
+    const head = r.kind !== prev ? `<div class="grp">${groups[r.kind]}</div>` : "";
+    prev = r.kind;
+    return head + `<div class="lane ${cls}${CUR.issue === r.n ? " sel" : ""}" data-n="${r.n}" ${r.kind === "queued" ? 'data-queued="1"' : ""}>
+      <button class="who" type="button" data-n="${r.n}" aria-pressed="${WATCH === r.n}" ${r.kind === "queued" ? "disabled" : ""} title="${esc(j.branch || "")}"><b>#${r.n}</b><span class="t">${esc(titleOf(r.n))}</span><span class="s${isCmd ? " cmd" : ""}">${esc(line)}</span></button>
+      ${stops(starting || r.kind === "queued" ? null : s)}
+      <span class="end"><b class="${endCls}">${esc(endWord)}</b><span>${[elapsed, sub].filter(Boolean).join(", ")}</span></span>
+    </div>`;
+  }).join("") || `<div class="empty">No runs yet. Pick issues in Start runs, or start one with: agent-sm &lt;repo-dir&gt; &lt;issue-number&gt;</div>`);
+  const running = (QUEUE.running || []).length;
+  $("jobs").hidden = !running;
+  $("jobs").textContent = running;
+}
+
+// problems lists what went wrong in one run, most important first.
+function problems(r) {
+  const s = r.sum, j = r.job || {}, out = [];
+  if (j.err) out.push({ title: "The run stopped with an error", body: `<pre>${esc(j.err)}</pre>` });
+  if (s && s.stale) out.push({ title: "No update for " + s.idleMin + " minutes", note: "the process may have been killed while in " + s.live, state: s.live });
+  if (s) s.steps.forEach((e, i) => {
+    const d = (e.s && e.s.denied_sample) || [];
+    if (BADOUT.includes(e.out)) {
+      const res = e.s && e.s.result;
+      out.push({ title: `${e.state} returned ${e.out}`, note: "step " + (i + 1) + (e.s && e.s.unit ? ", " + e.s.unit : "") + (e.s && e.s.killed ? ", killed" : ""), state: e.state, body: res ? `<pre>${esc(pretty(res))}</pre>` : "" });
+    }
+    if (d.length) out.push({ minor: true, title: `${e.state}: ${e.s.permission_denials} commands denied`, note: "step " + (i + 1), state: e.state, body: d.map(x => `<pre>${esc(x)}</pre>`).join("") });
+  });
+  return out.sort((a, b) => !!a.minor - !!b.minor);
+}
+function renderErrors() {
+  const open = new Set([...document.querySelectorAll("#errors details[open]")].map(d => d.dataset.k));
+  const list = rows().map(r => ({ r, p: problems(r) })).filter(x => x.p.length);
+  const fixed = x => x.r.sum && x.r.sum.exitEv && x.r.sum.exitEv.exit === "ready" && !(x.r.job || {}).err;
+  list.sort((a, b) => fixed(a) - fixed(b));
+  const unresolved = list.filter(x => !fixed(x)).length;
+  $("errCount").textContent = unresolved;
+  $("errCount").className = "badge" + (unresolved ? " bad" : "");
+  put("errors", list.map(x => {
+    const r = x.r, s = r.sum, end = s ? s.pillText : (r.job || {}).exit || "failed";
+    const where = s && s.exitEv && s.lastStep ? " after " + s.lastStep.state : "";
+    return `<article class="err-run${fixed(x) ? " fixed" : ""}">
+      <div class="err-who"><b>#${r.n}</b><p>${esc(titleOf(r.n)) || "&nbsp;"}</p><span class="chip ${s ? s.pillCls || "run" : exitCls(end)}">${esc(end + where)}</span><p><button class="btn link" type="button" data-n="${r.n}">Show in pipeline</button></p></div>
+      <div class="err-list">${x.p.map((p, i) => {
+        const head = `<b>${esc(p.title)}</b><span class="mute">${esc(p.note || "")}</span>`;
+        return p.body ? `<details class="${p.minor ? "minor" : ""}" data-k="${r.n}-${i}"><summary>${head}</summary><div class="body">${p.body}</div></details>`
+          : `<details class="${p.minor ? "minor" : ""} flat"><summary>${head}</summary></details>`;
+      }).join("")}</div>
+    </article>`;
+  }).join("") || `<div class="empty">No errors. Failed steps, denied commands and stopped runs show up here.</div>`);
+  open.forEach(k => { const d = document.querySelector(`#errors details[data-k="${k}"]`); if (d) d.open = true; });
 }
 
 function render(data) {
   $("issue").textContent = data.issue ? "#" + data.issue : "no run";
   const { st, exitEv, usage, stepUsage, steps, per, taken, total, session, lastStep, live, stale, cost, unknown, pillCls, pillText } = summarize(data);
   RUNNING = !!live && !stale;
-  const pill = $("pill");
-  pill.className = "pill " + pillCls;
-  pill.textContent = pillText;
+  $("pill").className = "pill " + pillCls;
+  $("pill").textContent = pillText;
   $("cost").textContent = data.issue ? usage(cost) + (unknown ? " + unknown" : "") : "";
   document.title = (data.issue ? "#" + data.issue + " " : "") + (exitEv ? exitEv.exit : (live || "idle")) + " - agent-sm";
 
@@ -363,8 +511,8 @@ function render(data) {
   $("line").textContent = session && st.last_tool
     ? st.last_tool + (st.last_command ? " (" + st.last_command + ")" : "") + " at " + st.updated.slice(11, 19)
     : exitEv ? "run finished" : stale ? "the run may have been killed" : live ? live + " is running" : "no run yet";
-  $("feedSum").textContent = feed.length ? "Agent activity, last " + feed.length + " lines" : "Agent activity (nothing yet)";
-  put("feed", feed.slice().reverse().map(f => `<div><span class="t">${f.t}</span><span class="${f.kind}">${f.kind === "say" ? "says: " : ""}${esc(f.text)}</span></div>`).join(""));
+  $("feedSum").textContent = feed.length ? "Agent activity, last " + feed.length + " lines" : "Agent activity: nothing yet";
+  put("feed", feed.slice().reverse().map(f => `<div><span class="t">${f.t}</span><span class="${f.kind}">${f.kind === "say" ? "says: " : ""}${esc(f.text)}</span></div>`).join("") || `<div class="mute">The agent's tool calls appear here while a step runs.</div>`);
 
   const cards = [["State", exitEv ? "ended: " + exitEv.exit : (live || "idle"), exitEv ? (exitEv.exit === "ready" ? "ok" : "no") : ""]];
   if (session && st.units > 0) cards.push(["Unit", st.unit_index + " / " + st.units + " " + esc(st.unit || ""), ""]);
@@ -373,21 +521,8 @@ function render(data) {
   cards.push(["Run usage", usage(cost) + (unknown ? " + unknown" : ""), ""]);
   put("cards", cards.map(c => `<div class="stat"><span>${c[0]}</span><b class="${c[2]}">${c[1]}</b></div>`).join(""));
 
-  const names = [...new Set(EDGES.map(e => e.from))];
-  const sel = PICKED || live || (lastStep && lastStep.state) || names[0];
-  put("pipe", names.map(name => {
-    const p = per[name] || { visits: 0, cost: 0 };
-    const failed = p.last && BADOUT.includes(p.last.out) && live !== name;
-    const share = total ? Math.round(100 * p.cost / total) : 0;
-    return `<button class="node${p.visits ? " visited" : ""}${failed ? " failed" : ""}${live === name ? " live" : ""}" data-s="${name}" aria-pressed="${sel === name}">
-      <span class="n-top"><span class="dot"></span>${live === name ? "running" : (p.visits ? "ran " + p.visits + "x" : "not run")}</span>
-      <b>${name}</b>
-      <span class="res ${p.last ? outCls(p.last.out) : ""}">${p.last ? p.last.out : ""}</span>
-      <span class="cost">${p.cost ? usage(p.cost) + " (" + share + "%)" : ""}${p.unknown ? " + unknown" : ""}</span>
-      <span class="bar"><i style="width:${share}%"></i></span>
-    </button>`;
-  }).join(""));
-
+  const sel = PICKED || live || (lastStep && lastStep.state) || stations()[0];
+  CUR = { issue: data.issue ? Number(data.issue) : null, sel };
   const p = per[sel] || { visits: 0, cost: 0 };
   const chips = EDGES.filter(e => e.from === sel).map(e => {
     const n = taken[sel + "|" + e.out + "|" + e.to];
@@ -407,7 +542,7 @@ function render(data) {
     const den = telemetry ? (s.permission_denials || 0) : "unknown";
     const w = a && total ? Math.round(100 * (stepUsage(s) || 0) / total) : 0;
     return `<tr><td class="mute">${i + 1}</td><td><b>${e.state}</b></td><td>${esc(s.unit || "")}</td><td><span class="chip ${outCls(e.out) === "ok" ? "good" : outCls(e.out) === "no" ? "bad" : "warn"}">${e.out}${s.killed ? " (killed)" : ""}</span></td><td class="mute">${esc(s.model || "")}</td><td class="r">${a ? (telemetry ? s.turns : "unknown") : ""}</td><td class="r">${a ? fmt((s.duration_ms || 0) / 60000, 1) : ""}</td><td class="r">${a ? calls : ""}</td><td class="r">${a ? den : ""}</td><td class="r costcell">${a ? (s.killed || s.usage_unknown ? "unknown" : usage(stepUsage(s))) : ""}<i style="--w:${w}%"></i></td><td class="r">${usage(e.usage ?? e.cost_usd)}${e.usage_unknown ? " + unknown" : ""}</td></tr>`;
-  }).join("") || `<tr><td colspan="11" class="empty">No steps yet.${CAN_RUN ? " Select issues above and press Run." : " Start a run with: agent-sm &lt;repo-dir&gt; &lt;issue-number&gt;"}</td></tr>`);
+  }).join("") || `<tr><td colspan="11" class="empty">No steps yet.${CAN_RUN ? " Pick issues in Start runs and press Run." : " Start a run with: agent-sm &lt;repo-dir&gt; &lt;issue-number&gt;"}</td></tr>`);
 
   const denied = steps.filter(e => e.s && (e.s.denied_sample || []).length);
   $("deniedBox").hidden = !denied.length;
@@ -448,7 +583,7 @@ async function loadIssues(refresh) {
   if (refresh) params.set("refresh", "1");
   const r = await fetch("/api/issues?" + params);
   if (!r.ok) { $("msg").textContent = "Cannot list issues: " + await r.text(); return; }
-  ISSUES = await r.json(); renderIssues();
+  ISSUES = await r.json(); renderIssues(); renderBoard(); renderErrors();
 }
 async function post(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "X-SM-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
@@ -485,69 +620,49 @@ function renderQueue(q) {
   if (first || providerChanged) $("audit").checked = !!q.audit;
   $("audit").disabled = q.provider !== "claude";
   if ($("audit").disabled) $("audit").checked = false;
-  renderLanes(q);
   // The last finished job's failure, until the same issue is running again.
   const last = (q.history || []).slice(-1)[0];
   if (last && last.err && !(q.running || []).some(j => j.issue === last.issue)) $("msg").textContent = QERR = "#" + last.issue + ": " + last.err;
   else if ($("msg").textContent === QERR) $("msg").textContent = "";
   $("stopBtn").disabled = !BUSY && !(q.queued || []).length;
-  renderIssues();
+  renderIssues(); renderBoard(); renderErrors();
 }
-// renderLanes shows every running job side by side, then the queued ones and the last finished.
-function renderLanes(q) {
-  const running = q.running || [], queued = q.queued || [];
-  const title = n => esc((ISSUES.find(i => i.number === n) || {}).title || "");
-  const empty = track({ per: {}, live: null });
-  const lanes = running.map(j => {
-    const s = LANES[j.issue], starting = !s || !!s.exitEv; // an exit event here is the previous attempt's
-    const line = starting ? "starting in its worktree"
-      : s.session && s.st.last_tool ? s.st.last_tool + (s.st.last_command ? " (" + s.st.last_command + ")" : "")
-      : s.live ? s.live + " is running" : "waiting for the first step";
-    const cls = starting ? "run" : s.pillCls;
-    return `<button class="lane ${cls}" type="button" data-n="${j.issue}" aria-pressed="${WATCH === j.issue}" title="${esc(j.branch || "")}">
-      <span class="l-top"><b class="i-num">#${j.issue}</b><span class="pill ${cls}">${esc(starting ? "starting" : s.pillText)}</span><span class="grow"></span><span class="num mute">${j.started ? sec(Math.max(0, Math.round((Date.now() - Date.parse(j.started)) / 1000))) : ""}</span></span>
-      <span class="l-title">${title(j.issue)}</span>
-      <span class="track">${starting ? empty : track(s)}</span>
-      <span class="l-foot"><span class="grow mute${!starting && s.session && s.st.last_tool ? " cmd" : ""}">${esc(line)}</span>${starting ? "" : `<b class="num">${s.usage(s.cost)}${s.unknown ? " +?" : ""}</b>`}</span>
-    </button>`;
-  });
-  queued.forEach(j => lanes.push(`<div class="lane queued">
-      <span class="l-top"><b class="i-num">#${j.issue}</b><span class="pill warn">queued</span></span>
-      <span class="l-title">${title(j.issue)}</span>
-      <span class="track">${empty}</span>
-      <span class="l-foot mute">waiting for a free slot</span>
-    </div>`));
-  const done = (q.history || []).slice(-6).reverse().map(j => `<button class="chip ${exitCls(j.exit)}" type="button" data-n="${j.issue}" aria-pressed="${WATCH === j.issue}" title="${esc([j.branch, j.err].filter(Boolean).join("\n"))}">#${j.issue} ${esc(j.exit || "failed")}</button>`).join("");
-  $("lanesBox").hidden = !lanes.length && !done;
-  $("laneCount").textContent = running.length + " running, " + queued.length + " waiting for a slot, up to " + (q.concurrency || 1) + " at once";
-  $("jobs").hidden = !running.length;
-  $("jobs").textContent = running.length + " running";
-  put("lanes", lanes.join(""));
-  put("recent", done ? '<span class="mute">Finished</span>' + done : "");
-}
+const fetchState = n => fetch(stateURL(n)).then(r => r.json()).catch(() => null);
 async function pollQueue() {
   if (!SELECTED_REPO) return;
   const q = await (await fetch(selectionURL("/api/queue"))).json();
   if (q.can_run && !CAN_RUN) { CAN_RUN = true; $("issuesPanel").classList.add("on"); loadIssues(false); }
   if (!q.can_run) return;
   const nums = (q.running || []).map(j => j.issue);
-  const got = await Promise.all(nums.map(n => fetch(stateURL(n)).then(r => r.json()).catch(() => null)));
+  // A finished run no longer changes: fetch it once per attempt.
+  const fresh = (q.history || []).slice(-8).filter(j => !DONE[doneKey(j)]);
+  const [got, done] = await Promise.all([Promise.all(nums.map(fetchState)), Promise.all(fresh.map(j => fetchState(j.issue)))]);
   LANES = {};
   nums.forEach((n, i) => { if (got[i]) LANES[n] = summarize(got[i]); });
+  fresh.forEach((j, i) => { if (done[i]) DONE[doneKey(j)] = { sum: summarize(done[i]) }; });
   renderQueue(q);
 }
-const stateURL = n => SELECTED_REPO ? selectionURL("/api/state") + (n ? "&issue=" + n : "") : "/api/state";
+const stateURL = n => SELECTED_REPO ? selectionURL("/api/state") + (n ? "&issue=" + n : "") : "/api/state" + (n ? "?issue=" + n : "");
 function watch(n) {
   WATCH = n && n !== WATCH ? n : null; PICKED = null;
-  $("runTitle").textContent = WATCH ? "Run #" + WATCH : "Newest run";
-  $("runHint").textContent = WATCH ? "Pinned. The runs above keep going." : "";
+  $("runHint").hidden = !WATCH;
+  $("runHint").textContent = WATCH ? "Pinned to #" + WATCH + ". The other runs keep going." : "";
   $("follow").hidden = !WATCH;
-  if (QUEUE.provider) renderLanes(QUEUE);
   tick();
 }
-$("lanes").addEventListener("click", e => { const b = e.target.closest("[data-n]"); if (b) watch(Number(b.dataset.n)); });
-$("recent").addEventListener("click", e => { const b = e.target.closest("[data-n]"); if (b) watch(Number(b.dataset.n)); });
+function show(view) {
+  for (const t of document.querySelectorAll(".tab")) {
+    const on = t.dataset.view === view;
+    t.setAttribute("aria-selected", on);
+    $(t.getAttribute("aria-controls")).hidden = !on;
+  }
+  if (location.hash.slice(1) !== view) history.replaceState(null, "", view === "pipe" ? location.pathname : "#" + view);
+}
+document.querySelector(".tabs").addEventListener("click", e => { const t = e.target.closest(".tab"); if (t) show(t.dataset.view); });
+$("lanes").addEventListener("click", e => { const b = e.target.closest("[data-n]"); if (b && !b.dataset.queued) watch(Number(b.dataset.n)); });
+$("errors").addEventListener("click", e => { const b = e.target.closest("button[data-n]"); if (b) { WATCH = null; watch(Number(b.dataset.n)); show("pipe"); } });
 $("follow").addEventListener("click", () => watch(null));
+$("pipe").addEventListener("click", e => { const b = e.target.closest(".stn"); if (b) { PICKED = b.dataset.s; tick(); } });
 function selectionURL(path) {
   const params = new URLSearchParams({ repo: SELECTED_REPO, language: SELECTED_LANGUAGE, provider: SELECTED_AGENT });
   return path + "?" + params;
@@ -602,10 +717,12 @@ $("selectRepo").addEventListener("click", async () => {
   SELECTED_REPO = $("repoPath").value.trim();
   SELECTED_LANGUAGE = $("language").value;
   SELECTED_AGENT = $("agent").value;
-  SEL.clear(); ISSUES = []; CAN_RUN = false;
+  SEL.clear(); ISSUES = []; CAN_RUN = false; DONE = {};
   $("issuesPanel").classList.remove("on");
   $("models").innerHTML = "";
   $("msg").textContent = "";
+  $("repoName").textContent = SELECTED_REPO;
+  $("repoName").title = SELECTED_REPO;
   if (!SELECTED_REPO) { $("msg").textContent = "Enter a local Git repository path."; return; }
   try {
     const r = await fetch(selectionURL("/api/queue"));
@@ -622,10 +739,6 @@ $("issueGrid").addEventListener("change", e => {
   const n = Number(e.target.dataset.n); if (!n) return;
   e.target.checked ? SEL.add(n) : SEL.delete(n); renderIssues();
 });
-$("pipe").addEventListener("click", e => {
-  const b = e.target.closest(".node"); if (!b) return;
-  PICKED = b.dataset.s; tick();
-});
 $("runBtn").addEventListener("click", async () => {
   if (QUEUE.provider === "copilot" && !$("budget").reportValidity()) return;
   const issues = [...SEL].sort((a, b) => a - b);
@@ -639,7 +752,7 @@ $("runBtn").addEventListener("click", async () => {
     SEL.clear(); PICKED = null;
     const body = { issues, repo: SELECTED_REPO, language: SELECTED_LANGUAGE, publish, provider: SELECTED_AGENT, audit: $("audit").checked, transcripts: $("transcripts").checked, budget: $("budget").value, concurrency: Math.min(16, Math.max(1, parseInt($("parallel").value, 10) || 1)), models: chosenModels() };
     const q = await post("/api/run", body);
-    renderQueue(q); $("note").textContent = (q.notes || []).join(" "); tick();
+    renderQueue(q); $("note").textContent = (q.notes || []).join(" "); show("pipe"); tick();
     if ($("note").textContent) loadIssues(true); // a note can mean an issue was closed
   }
   catch (e) { $("msg").textContent = "Cannot start: " + e.message; }
@@ -653,7 +766,11 @@ async function tick() {
   clearTimeout(TIMER);
   try {
     if (!EDGES.length) EDGES = await (await fetch("/api/graph")).json();
-    render(await (await fetch(stateURL(WATCH))).json());
+    const newest = await fetchState(null);
+    const shown = WATCH ? await fetchState(WATCH) : newest;
+    if (shown) render(shown);
+    NEWEST = newest && newest.issue ? { n: Number(newest.issue), sum: summarize(newest) } : null;
+    renderBoard(); renderErrors();
     await pollQueue();
   } catch (e) { $("line").textContent = "cannot reach the server: " + e; }
   TIMER = setTimeout(tick, RUNNING || BUSY ? 2000 : 10000); // nothing changes fast when no run is live
@@ -661,6 +778,7 @@ async function tick() {
 $("repoPath").value = DEFAULT_REPO;
 $("language").value = "auto";
 $("agent").value = DEFAULT_AGENT;
+show(["errors", "start"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "pipe");
 if (DEFAULT_REPO) $("selectRepo").click();
 tick();
 </script>

@@ -23,7 +23,7 @@ Preconditions:
 - Baseline, `$V doctor` all `ok`.
 - A scratch non-Git folder exists: `mkdir -p "$($V evidence)/repo-setup/plain"`.
 
-- **Default.** Load the page. `#repoPath` holds `$PWD` and the `Open issues` panel is visible.
+- **Default.** Load `/#start`. `#repoPath` holds `$PWD` and the `Open issues` panel is visible.
 - **Picker opens.** Click the `Browse folders` button. `dialog#folderPicker` opens, `#folderPath` holds `$PWD`, `#folderStatus` reads `Git repository: $PWD`, and `Use this repository` is enabled.
 - **Subfolder resolves to root.** Click `#folderList button[data-path="$PWD/web"]`. `#folderPath` ends in `/web`, `#folderStatus` still reads `Git repository: $PWD`. Same request: `$V api POST /api/folders "{\"path\":\"$PWD/web\"}"` returns `"repo":"$PWD"` and `HTTP 200`.
 - **Up.** Click `Up`. `#folderPath` is `$PWD` again.

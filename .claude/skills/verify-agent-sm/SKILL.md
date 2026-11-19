@@ -75,13 +75,15 @@ Do not call it unless the user asked for a live run in this conversation.
 
 | What | Handle |
 |---|---|
-| Header: issue, state pill, status line, usage | `#issue`, `#pill`, `#line`, `#cost` |
-| Setup: path, picker button, profile, agent, apply | `#repoPath`, button `Browse folders`, `#language`, `#agent`, button `Use setup` |
+| Tabs (top bar) | `.tab[data-view=pipe\|errors\|start]` (`Pipeline`, `Errors`, `Start runs`); also reachable as `/#errors`, `/#start`. Running count `#jobs`, unresolved error count `#errCount` |
+| Selected run header: issue, state pill, status line, usage | `#issue`, `#pill`, `#line`, `#cost` |
+| Setup (in `Start runs`): path, picker button, profile, agent, apply | `#repoPath`, button `Browse folders`, `#language`, `#agent`, button `Use setup` |
 | Folder picker dialog | `dialog#folderPicker` (`Choose a repository folder`): `#folderPath`, buttons `Go`, `Home`, `Up`, `Cancel`, `Use this repository`; status `#folderStatus`; entries `#folderList button[data-path]` |
-| Issues: filter, refresh, cards, count | `#filter` (aria-label `Filter issues`), button `Refresh`, `#issueGrid input[data-n="<number>"]`, `#issueCount`, `#selCount` |
-| Run controls | `#publish`, `#budget`, `#transcripts`, `#audit`, `#stopBtn`, `#runBtn`, messages `#msg`, parallel runs `#lanes .lane[data-n="<n>"]` (click pins the run view; `#follow` unpins), finished chips `#recent button[data-n]`, header count `#jobs` |
+| Issues (in `Start runs`): filter, refresh, cards, count | `#filter` (aria-label `Filter issues`), button `Refresh`, `#issueGrid input[data-n="<number>"]`, `#issueCount`, `#selCount` |
+| Run controls | `#publish`, `#budget`, `#transcripts`, `#audit`, `#stopBtn`, `#runBtn`, messages `#msg`, board rows `#lanes .lane[data-n="<n>"]`, grouped running, waiting, finished here, latest run on disk (click pins the run view; `#follow` unpins) |
 | Model inputs | `#models input[data-state="<state>"]` (aria-label `<state> model`) |
-| Run view | cards `#cards`, feed `#feed`, pipeline `#pipe button[data-s="<state>"]` (`aria-pressed`), detail `#detail`, steps `#steps tr`, `#stepCount`, denied `#deniedBox` / `#denied` |
+| Run view (in `Pipeline`) | station columns `#pipe button[data-s="<state>"]` (`aria-pressed`), cards `#cards`, feed `#feed`, detail `#detail`, steps `#steps tr`, `#stepCount`, denied `#deniedBox` / `#denied` |
+| Errors | `#errors article.err-run` per run (`.fixed` when it ended ready), `details` per problem, `button[data-n]` `Show in pipeline` |
 
 The page fetches after load and re-renders on a poll (10 s idle, 2 s while running). After a
 navigation or click, wait for the expected text (for example `#stepCount` non-empty), not a
