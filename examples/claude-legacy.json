@@ -3,7 +3,12 @@
   "legacy_rust_ghidra": true,
   "format": "cargo fmt --all",
   "checks": [
-    "scripts/verify.sh",
+    "cargo fmt --all -- --check",
+    "scripts/check-deps.sh",
+    "scripts/check-determinism.sh",
+    "cargo clippy --locked --workspace --all-targets -- -D warnings",
+    "cargo test --locked --workspace",
+    "cargo test --locked --workspace --doc",
     "scripts/check-diff.sh . --staged"
   ]
 }

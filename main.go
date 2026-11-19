@@ -865,13 +865,21 @@ func runChecks(c *Ctx) bool {
 			c.Feedback = "check failed: " + cmd + "\n" + tail(out, 4000)
 			return false
 		}
-		c.CheckOut += "$ " + cmd + "\n" + tail(out, 1500) + "\n"
+		c.CheckOut += "$ " + cmd + "\n" + ends(out, 500, 1000) + "\n"
 	}
 	if err := verifyTestReports(resultDir, settings.TestReports); err != nil {
 		c.Feedback = err.Error()
 		return false
 	}
 	return true
+}
+
+// ends keeps the start and the end of s: check-diff puts its WARN headers first, test runners their totals last.
+func ends(s string, head, end int) string {
+	if len(s) <= head+end {
+		return s
+	}
+	return s[:head] + "\n[...]\n" + s[len(s)-end:]
 }
 
 // inScope: a staged path is allowed when it equals a listed file or lies under a listed directory.

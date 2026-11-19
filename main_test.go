@@ -238,7 +238,7 @@ func TestPromptCommandsAreAllowed(t *testing.T) {
 	named := map[State][]string{
 		Plan:        {"gh issue view"},
 		Investigate: {"ghidra", "grep", "~/venvs/desmume/bin/python", "Export JAVA_HOME", "source scripts/agent.sh", "re_fn", "re_tree"},
-		Execute:     {"cargo fmt", "scripts/verify.sh", "scripts/check-deps.sh", "~/venvs/desmume/bin/python"},
+		Execute:     {"cargo fmt", "scripts/verify.sh", "~/venvs/desmume/bin/python"},
 		Review:      {"git diff --cached", "grep", "ghidra", "~/venvs/desmume/bin/python", "Export JAVA_HOME", "source scripts/agent.sh", "re_src"},
 	}
 	for s, cmds := range named {
@@ -719,5 +719,36 @@ func TestModelDefaultsAndChoice(t *testing.T) {
 	}
 	if last != "SM_MODEL_PLAN=claude-opus-5-5" {
 		t.Errorf("the page's model must win over the server's environment, got %q", last)
+	}
+}
+
+// A REVISE list must reach the next review, which confirms each item; a first review gets none.
+func TestReReviewGetsLastRevise(t *testing.T) {
+	dir := t.TempDir()
+	p := defaultProfile("claude")
+	p.Transcripts = false
+	useProfile(t, p)
+	oldEvents := eventsPath
+	eventsPath = filepath.Join(dir, "events.jsonl")
+	t.Cleanup(func() { eventsPath = oldEvents })
+	args, count := filepath.Join(dir, "args"), filepath.Join(dir, "count")
+	writeFile(t, filepath.Join(dir, "claude"), `#!/bin/sh
+n=$(cat '`+count+`' 2>/dev/null || echo 0); echo $((n+1)) > '`+count+`'
+printf '%s\n' "$@" > '`+args+`'.$n
+v='{"verdict":"PASS","reasons":[]}'; [ "$n" = 0 ] && v='{"verdict":"REVISE","reasons":["rename foo"]}'
+printf '{"type":"result","is_error":false,"total_cost_usd":0.1,"structured_output":%s}\n' "$v"
+`, 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	c := &Ctx{Repo: dir, Scratch: dir}
+	if got := review(c); got != Fail || c.LastRevise != "- rename foo" {
+		t.Fatalf("first review = %v, LastRevise %q", got, c.LastRevise)
+	}
+	if got := review(c); got != Pass {
+		t.Fatalf("second review = %v", got)
+	}
+	first, _ := os.ReadFile(args + ".0")
+	second, _ := os.ReadFile(args + ".1")
+	if strings.Contains(string(first), "Re-review") || !strings.Contains(string(second), "Confirm each one was made:\n- rename foo") {
+		t.Fatalf("re-review dispatch missing the last REVISE list:\nfirst: %s\nsecond: %s", tail(string(first), 300), tail(string(second), 300))
 	}
 }
