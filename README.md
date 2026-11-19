@@ -7,7 +7,8 @@ table in `main.go`: its function, outcomes, role prompt, output schema, allow li
 
     prepare -> plan -> investigate (one session per unit) -> execute -> check -> review -> publish
 
-Exits: `ready`, `gave-up`, `errored`, `split`, `escalated`, `stopped`.
+Exits: `ready`, `gave-up`, `errored`, `split`, `escalated`, `stopped`. A blocked execute goes back to plan once
+(usually to widen the file list), with the executor's report; blocked again, the run gives up.
 
 ## Usage
 

@@ -141,7 +141,7 @@ func init() { // not a composite literal at package level: the step functions re
 			Role: "investigator", Model: sonnet,
 			Schema: `{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"},"fits_one_pr":{"type":"boolean"}},"required":["status","evidence","handoff","fits_one_pr"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead + ",Bash(git log:*),Bash(git grep:*),Bash(git status:*),Bash(gh issue view:*)"},
-		Execute: {Name: "execute", Run: execute, Outs: []Out{Ok, Blocked, Invalid, Timeout, OverBudget},
+		Execute: {Name: "execute", Run: execute, Outs: []Out{Ok, Blocked, Fail, Invalid, Timeout, OverBudget},
 			Role: "executor", Model: sonnet,
 			Schema: `{"type":"object","properties":{"status":{"enum":["done","partial","blocked"]},"summary":{"type":"string"},"closes_issue":{"type":"boolean"}},"required":["status","summary","closes_issue"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob,Edit,Write," + shRead + ",Bash(git diff:*),Bash(git status:*)",
@@ -165,6 +165,7 @@ func init() { // not a composite literal at package level: the step functions re
 const (
 	maxExecute = 3 // execute runs before giving up
 	maxInvalid = 2 // runs of one state before invalid output becomes errored
+	maxPlan    = 2 // plan runs: the first, and one re-plan after a blocked execute
 )
 
 type Next struct {
@@ -226,8 +227,13 @@ func next(s State, o Out, visits [numStates]int) Next {
 		switch o {
 		case Ok:
 			return goTo(Check)
-		case Blocked:
+		case Blocked: // plan is the step that sets the file list, the usual blocker
+			if visits[Plan] < maxPlan {
+				return goTo(Plan)
+			}
 			return done(GaveUp)
+		case Fail:
+			return done(Errored)
 		}
 	case Check:
 		switch o {
@@ -749,8 +755,17 @@ func plan(c *Ctx) Out {
 		Units              []Unit
 		IssuePlan          *WorkPlan `json:"issue_plan"`
 	}
-	if o := agent(c, Plan, dispatch(c, steps[Plan].Role, ""), &r); o != Ok {
+	extra := ""
+	if c.Rounds > 0 {
+		extra = " Re-plan: the executor stopped as blocked, and its work is in the working tree. Fix the task so it can finish " +
+			"(for example add the files it needs); return blocked if it cannot. Its report:\n" + c.Summary
+	}
+	if o := agent(c, Plan, dispatch(c, steps[Plan].Role, extra), &r); o != Ok {
 		return o
+	}
+	if c.Rounds > 0 {
+		c.UnitIdx, c.BlockedUnits = 0, 0
+		c.Feedback = "your last session stopped as blocked and the task was re-planned. Its report:\n" + c.Summary
 	}
 	c.Objective, c.Points, c.PointsDerived, c.Files, c.Verification, c.Units = r.Objective, r.Points, r.PointsDerived, r.Files, r.Verification, r.Units
 	if r.IssuePlan != nil {
@@ -824,7 +839,7 @@ func taskText(c *Ctx) string {
 
 func execute(c *Ctx) Out {
 	if err := manageRun(c, true, 0, "Implementation started.", true); err != nil {
-		return Blocked
+		return Fail // the service, not the task, is stuck: a re-plan would not help
 	}
 	var r struct {
 		Status      string

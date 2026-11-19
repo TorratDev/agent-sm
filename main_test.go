@@ -54,6 +54,17 @@ func TestLimits(t *testing.T) {
 	if n := next(Review, Invalid, v); n.State != Review {
 		t.Errorf("first invalid = %+v, want retry", n)
 	}
+	v[Plan] = 1
+	if n := next(Execute, Blocked, v); n.State != Plan {
+		t.Errorf("first blocked execute = %+v, want re-plan", n)
+	}
+	v[Plan] = maxPlan
+	if n := next(Execute, Blocked, v); n.Exit != GaveUp {
+		t.Errorf("blocked execute after re-plan = %+v, want gave-up", n)
+	}
+	if n := next(Execute, Fail, v); n.Exit != Errored {
+		t.Errorf("execute management failure = %+v, want errored", n)
+	}
 }
 
 func TestReportFindsUnused(t *testing.T) {
@@ -183,6 +194,32 @@ func TestRunLoop(t *testing.T) {
 	fake(t, map[State]func(*Ctx) Out{Plan: func(*Ctx) Out { plans++; return Invalid }})
 	if exit := run(&Ctx{}); exit != Errored || plans != maxInvalid {
 		t.Errorf("invalid limit: exit=%v after %d plans, want errored after %d", exit, plans, maxInvalid)
+	}
+
+	// A blocked execute re-plans once, and the re-plan hears why.
+	plans, executes = 0, 0
+	var replanSaw string
+	fake(t, map[State]func(*Ctx) Out{
+		Plan: func(c *Ctx) Out { plans++; replanSaw = c.Summary; return Direct },
+		Execute: func(c *Ctx) Out {
+			if executes++; executes == 1 {
+				c.Summary = "needs apps/x.rs"
+				return Blocked
+			}
+			return Ok
+		},
+	})
+	if exit := run(&Ctx{}); exit != Ready || plans != 2 || replanSaw != "needs apps/x.rs" {
+		t.Errorf("re-plan: exit=%v after %d plans (saw %q), want ready after 2", exit, plans, replanSaw)
+	}
+	// Blocked again after the re-plan: gave-up.
+	plans = 0
+	fake(t, map[State]func(*Ctx) Out{
+		Plan:    func(*Ctx) Out { plans++; return Direct },
+		Execute: func(*Ctx) Out { return Blocked },
+	})
+	if exit := run(&Ctx{}); exit != GaveUp || plans != maxPlan {
+		t.Errorf("blocked twice: exit=%v after %d plans, want gave-up after %d", exit, plans, maxPlan)
 	}
 
 	// A timed-out or over-budget session is not rerun.
