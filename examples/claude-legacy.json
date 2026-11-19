@@ -3,8 +3,7 @@
   "legacy_rust_ghidra": true,
   "format": "cargo fmt --all",
   "checks": [
-    "cargo fmt --all -- --check",
-    "cargo clippy --workspace --all-targets -- -D warnings",
-    "cargo test --workspace"
+    "scripts/verify.sh",
+    "scripts/check-diff.sh . --staged"
   ]
 }

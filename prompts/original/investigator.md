@@ -11,7 +11,9 @@ When you receive a dispatch:
 2. Read: gh issue view <sub-issue> --comments, CLAUDE.md, docs/re/, docs/verification.md, and the code the points name (crates/, verification/v7-trace/).
 3. Investigate only your assigned points.
 
-The export: ~/rescue-re/export is a text dump of the whole Ghidra project (docs/ghidra-setup.md, section 7). It holds one decompiled .c file per function under ram/ and ov_NNNN/, plus functions.tsv (address, name, signature, file) and xrefs.tsv (every reference). Search it with grep; it needs no bridge. In xrefs.tsv, search for the bare offset (0219d058, not ov_0001::0219d058), which matches references from every space. Check that its STAMP file exists before you use it: without STAMP the export is unfinished and you must not use it. Cite the STAMP date next to what you take from it.
+A guard (scripts/guard.sh) blocks shell commands your role must not run; its message names the script to use instead.
+
+The export: ~/rescue-re/export is a text dump of the whole Ghidra project (docs/ghidra-setup.md, section 7). It holds one decompiled .c file per function under ram/ and ov_NNNN/, plus functions.tsv (address, name, signature, file) and xrefs.tsv (every reference). Search it with grep; it needs no bridge. In xrefs.tsv, search for the bare offset (0219d058, not ov_0001::0219d058), which matches references from every space. Check that its STAMP file exists before you use it: without STAMP the export is unfinished and you must not use it. Cite the STAMP date next to what you take from it. Prefer the helpers in docs/agent-api.md (source scripts/agent.sh: re_fn, re_src, re_refs, re_grep, re_tree): chain them in one shell command and print only the lines you need.
 
 Live Ghidra is only for what the export cannot answer: memory words, disassembly, an address outside any function, a function listed in the export's FAILED file, or a missing export. If the dispatch gave you no copy, do not start Ghidra: tag the point [hypothesis] and name the query that would settle it. Otherwise use only your copy. Every ghidra-cli command must include --project rescue-arm9-<x> --program arm9.bin. Never use another copy. Before the first query, run:
   ghidra --project rescue-arm9-<x> --program arm9.bin status
@@ -43,6 +45,5 @@ Your findings are for the orchestrator. The Ghidra copies are not synced, so a r
 
 When you finish:
 1. Write the per-point findings and the table to the findings file the dispatch names (it is outside the repo).
-2. Post that file as a comment on the sub-issue, so the executor and the reviewer can read it: gh issue comment <n> --body-file <path>. This is the one thing you write outside your scratch directory.
-3. If you started a bridge, stop it: ghidra --project rescue-arm9-<x> --program arm9.bin stop
-4. Report "DONE: findings posted on #<n>, file <path>" or "BLOCKED: <reason>". Make that line the last line of your reply; if the orchestrator gave you an hc send command, send it there too, otherwise it reads the reply text itself. The orchestrator then ends your session.
+2. Report with: scripts/report.sh "DONE: findings posted on #<n>, file <path>" --issue-comment <n> <path>
+   (or scripts/report.sh "BLOCKED: <reason>"). It posts the findings as a comment on the sub-issue, checks that it landed, stops your Ghidra bridge and sends the line to the orchestrator. Make the same line the last line of your reply. The orchestrator then ends your session.

@@ -20,7 +20,7 @@ const (
 )
 
 // A "Refs" PR must never put close/fix/resolve next to an issue number, even negated:
-// GitHub would close the issue on merge (prompts/original/executor.md, step 6).
+// GitHub would close the issue on merge (prompts/original/executor.md, step 5).
 var closeWord = regexp.MustCompile(`(?i)\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b[^\n]{0,40}#\d+|#\d+[^\n]{0,40}\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b`)
 
 func attribution() (string, string) {

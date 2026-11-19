@@ -237,9 +237,9 @@ func TestPromptCommandsAreAllowed(t *testing.T) {
 	useProfile(t, p)
 	named := map[State][]string{
 		Plan:        {"gh issue view"},
-		Investigate: {"ghidra", "grep", "~/venvs/desmume/bin/python", "Export JAVA_HOME"},
-		Execute:     {"cargo fmt", "cargo clippy", "cargo test", "scripts/check-deps.sh", "~/venvs/desmume/bin/python"},
-		Review:      {"git diff --cached", "grep", "ghidra", "~/venvs/desmume/bin/python", "Export JAVA_HOME"},
+		Investigate: {"ghidra", "grep", "~/venvs/desmume/bin/python", "Export JAVA_HOME", "source scripts/agent.sh", "re_fn", "re_tree"},
+		Execute:     {"cargo fmt", "scripts/verify.sh", "scripts/check-deps.sh", "~/venvs/desmume/bin/python"},
+		Review:      {"git diff --cached", "grep", "ghidra", "~/venvs/desmume/bin/python", "Export JAVA_HOME", "source scripts/agent.sh", "re_src"},
 	}
 	for s, cmds := range named {
 		prompt := rolePrompt(s)

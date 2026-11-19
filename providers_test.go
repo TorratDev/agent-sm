@@ -1174,7 +1174,7 @@ func TestChecksPreserveCandidate(t *testing.T) {
 		name, command, format string
 		want                  Out
 	}{
-		{"pass with spaces", "true", "", Pass},
+		{"pass with spaces", "echo WARN shown", "", Pass},
 		{"failed check", "false", "", Fail},
 		{"modified worktree", "printf changed > 'allowed name.txt'", "", Fail},
 		{"modified index", "printf outside > outside.txt && git add outside.txt", "", Fail},
@@ -1195,6 +1195,9 @@ func TestChecksPreserveCandidate(t *testing.T) {
 			c := &Ctx{Repo: repo, Scratch: t.TempDir(), Files: []string{"allowed name.txt"}}
 			if got := check(c); got != tc.want {
 				t.Fatalf("got %v want %v: %s", got, tc.want, c.Feedback)
+			}
+			if tc.want == Pass && !strings.Contains(c.CheckOut, "$ "+tc.command+"\nWARN shown\n") {
+				t.Fatalf("passing check output not kept for the reviewer: %q", c.CheckOut)
 			}
 		})
 	}

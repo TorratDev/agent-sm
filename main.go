@@ -115,7 +115,7 @@ const shRead = "Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(ls:*),Bash(cat:*),Ba
 // The py-desmume interpreter the prompts name for runtime probes, and what a probe run needs.
 const shProbe = "Bash(~/venvs/desmume/bin/python:*),Bash(python3:*),Bash(export:*),Bash(mkdir:*),Bash(sha1sum:*)"
 
-// Default models, as the rust-mm orchestrator assigned them (prompts/original/orchestrator.md):
+// Default models, as rust-mm's spawn.sh assigns them (prompts/original/orchestrator.md, Roles):
 // sonnet for the working roles, opus for the reviewer. Never the CLI's own default, which
 // follows the user's account and can be the most expensive model.
 const (
@@ -266,6 +266,8 @@ type Ctx struct {
 	Body            string
 	Evidence        string // investigate -> execute
 	Feedback        string // check/review failure -> next execute
+	LastRevise      string // review REVISE -> next review, which confirms each item was done
+	CheckOut        string // check -> review: what the passing checks printed (WARN lines)
 	Diff            string // check -> review
 	Summary         string // execute -> review
 	Scratch         string // outside the repo
@@ -716,7 +718,7 @@ func exportState() string {
 }
 
 // dispatch is the user message of an agent step, in the form of the old orchestrator's
-// dispatch text (prompts/original/orchestrator.md) so the role prompts read it as before.
+// dispatch text (now built by rust-mm's scripts/orch/spawn.sh) so the role prompts read it as before.
 func dispatch(c *Ctx, role, extra string) string {
 	notes := ""
 	if d := settings.NotesDir; d != "" {
@@ -856,11 +858,14 @@ func runChecks(c *Ctx) bool {
 		c.Feedback = "cannot create check output directory: " + err.Error()
 		return false
 	}
+	c.CheckOut = ""
 	for _, cmd := range settings.Checks {
-		if out, err := checkCommand(c.Repo, cmd, "SM_CHECK_RESULTS="+resultDir, "SM_SCRATCH="+c.Scratch); err != nil {
+		out, err := checkCommand(c.Repo, cmd, "SM_CHECK_RESULTS="+resultDir, "SM_SCRATCH="+c.Scratch)
+		if err != nil {
 			c.Feedback = "check failed: " + cmd + "\n" + tail(out, 4000)
 			return false
 		}
+		c.CheckOut += "$ " + cmd + "\n" + tail(out, 1500) + "\n"
 	}
 	if err := verifyTestReports(resultDir, settings.TestReports); err != nil {
 		c.Feedback = err.Error()
@@ -962,7 +967,11 @@ func review(c *Ctx) Out {
 		Reasons []string
 	}
 	extra := taskText(c) + " Executor's summary: " + c.Summary + "\nFindings:\n" + c.Evidence +
-		"\nChecks: all passed.\nDiff (staged):\n" + c.Diff
+		"\nChecks: all passed. Their output (judge any WARN lines):\n" + c.CheckOut
+	if c.LastRevise != "" {
+		extra += "\nRe-review: the last review asked for the changes below. Confirm each one was made:\n" + c.LastRevise
+	}
+	extra += "\nDiff (staged):\n" + c.Diff
 	if o := agent(c, Review, dispatch(c, steps[Review].Role, extra), &r); o != Ok {
 		return o
 	}
@@ -976,6 +985,7 @@ func review(c *Ctx) Out {
 		return Escalate
 	}
 	c.Feedback = "review (REVISE):\n- " + strings.Join(r.Reasons, "\n- ")
+	c.LastRevise = "- " + strings.Join(r.Reasons, "\n- ")
 	return Fail
 }
 

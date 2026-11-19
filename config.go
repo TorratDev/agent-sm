@@ -412,9 +412,10 @@ func configuredAllow(state State) string {
 	if settings.Legacy {
 		allow += "," + shProbe
 		if state == Execute {
-			allow += ",Bash(cargo:*),Bash(scripts/check-deps.sh:*),Bash(./scripts/check-deps.sh:*)"
+			allow += ",Bash(cargo:*),Bash(scripts/check-deps.sh:*),Bash(./scripts/check-deps.sh:*),Bash(scripts/verify.sh:*)"
 		} else if state != Plan {
-			allow += ",Bash(ghidra:*)"
+			// rust-mm's CLAUDE.md points agents at the read-only export helpers in scripts/agent.sh.
+			allow += ",Bash(ghidra:*),Bash(source scripts/agent.sh:*),Bash(re_fn:*),Bash(re_src:*),Bash(re_refs:*),Bash(re_grep:*),Bash(re_tree:*)"
 		}
 	}
 	if settings.Management.Mode == "service" {

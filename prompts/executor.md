@@ -19,7 +19,7 @@ Rules:
 Work:
 1. Restate the Objective to yourself in one line.
 2. Edit the named files. Tests that need the ROM must skip cleanly (print SKIPPED and pass) when no dump is configured (docs/rom-tests.md).
-3. Run the verification the dispatch names (cargo fmt --all --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace by default) and fix what fails. The program runs it again after you.
+3. Run the verification the dispatch names (by default scripts/verify.sh: the CI steps fmt, deps, determinism, clippy, tests and doctests, one PASS/FAIL line each) and fix what fails. The program runs it again after you.
 
 Your result is the typed output, not a message to anyone:
 - status "done": the work is complete; `summary` has what you changed and the verification result.
