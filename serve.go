@@ -240,6 +240,29 @@ func latestRun(root string) (dir, issue string) {
 	return dir, issue
 }
 
+// runDirs maps each issue to its newest run directory: root/<n> (CLI runs) or
+// root/repos/<hash>/<n> (runs started from the page), each with optional attempt-<k> retries.
+// shortcut: the same issue number in two repositories shows only the newer run; key by repo if the board goes multi-repo.
+func runDirs(root string) map[string]string {
+	dirs, newest := map[string]string{}, map[string]int64{}
+	for _, pat := range []string{"*", "*/attempt-*", "repos/*/*", "repos/*/*/attempt-*"} {
+		files, _ := filepath.Glob(filepath.Join(root, pat, "events.jsonl"))
+		for _, f := range files {
+			dir := filepath.Dir(f)
+			issue := filepath.Base(dir)
+			if strings.HasPrefix(issue, "attempt-") {
+				issue = filepath.Base(filepath.Dir(dir))
+			}
+			fi, err := os.Stat(f)
+			if _, bad := strconv.Atoi(issue); bad != nil || err != nil || fi.ModTime().UnixNano() <= newest[issue] {
+				continue
+			}
+			dirs[issue], newest[issue] = dir, fi.ModTime().UnixNano()
+		}
+	}
+	return dirs
+}
+
 // stallAfter: a run with no exit and no file written for this long is shown as stalled
 // (a long silent step, or a process that died without logging its exit).
 const stallAfter = 10 * time.Minute
@@ -430,12 +453,10 @@ func serve(issue, addr, repo string) error {
 	mux.HandleFunc("/api/graph", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(edges()) })
 	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, r *http.Request) {
 		runs := []runSummary{}
-		dirs, _ := filepath.Glob(filepath.Join(root, "*"))
-		for _, d := range dirs {
-			if _, err := strconv.Atoi(filepath.Base(d)); err == nil {
-				if rs, ok := readRun(d, time.Now()); ok {
-					runs = append(runs, rs)
-				}
+		for issue, d := range runDirs(root) {
+			if rs, ok := readRun(d, time.Now()); ok {
+				rs.Issue = issue // d may be an attempt-<k> directory
+				runs = append(runs, rs)
 			}
 		}
 		json.NewEncoder(w).Encode(map[string]any{"runs": runs, "stations": stateNames(), "limits": map[string]int{"execute": maxExecute}})
@@ -446,6 +467,9 @@ func serve(issue, addr, repo string) error {
 		if n, err := strconv.Atoi(r.URL.Query().Get("issue")); err == nil && n > 0 { // a card picked on the board
 			iss = strconv.Itoa(n)
 			scratch, events = filepath.Join(root, iss), ""
+			if d := runDirs(root)[iss]; d != "" {
+				scratch = d
+			}
 		}
 		if scratch == "" && iss != "" {
 			scratch = filepath.Join(root, iss)

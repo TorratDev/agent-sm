@@ -374,7 +374,7 @@ function diagram(c) {
 }
 
 function card(c) {
-  const running = QUEUE.running && String(QUEUE.running.issue) === String(c.issue);
+  const running = (QUEUE.running || []).some(j => String(j.issue) === String(c.issue));
   const acts = (running && QUEUE.can_run ? `<button class="btn danger" data-act="stop">Stop</button>` : "")
     + (c.pr ? `<a class="btn primary" href="${esc(c.pr)}" target="_blank" rel="noopener">Open PR</a>` : "");
   return `<article class="card tone-${c.tone}${String(c.issue) === PICK ? " picked" : ""}" data-n="${esc(c.issue)}">
@@ -390,7 +390,7 @@ function card(c) {
 // cards: the runs on disk, plus the queue's jobs that have not started writing yet.
 function cardsData() {
   const by = new Map(RUNS.map(r => [String(r.issue), r]));
-  if (QUEUE.running && !by.has(String(QUEUE.running.issue))) by.set(String(QUEUE.running.issue), { issue: QUEUE.running.issue, steps: [], live: "prepare" });
+  for (const j of QUEUE.running || []) if (!by.has(String(j.issue))) by.set(String(j.issue), { issue: j.issue, steps: [], live: "prepare" });
   for (const j of QUEUE.queued || []) by.set(String(j.issue), { issue: j.issue, steps: [], queued: true });
   const title = n => (ISSUES.find(i => String(i.number) === String(n)) || {}).title || "";
   const rank = c => c.tone === "run" ? 0 : c.stalled ? 1 : c.queued ? 2 : 3;

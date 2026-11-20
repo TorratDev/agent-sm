@@ -211,6 +211,27 @@ func TestReadRun(t *testing.T) {
 	}
 }
 
+func TestRunDirsFindsPageRuns(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel string, age time.Duration) string {
+		dir := filepath.Join(root, rel)
+		os.MkdirAll(dir, 0o755)
+		f := filepath.Join(dir, "events.jsonl")
+		os.WriteFile(f, []byte("{}\n"), 0o644)
+		at := time.Now().Add(-age)
+		os.Chtimes(f, at, at)
+		return dir
+	}
+	cli := write("424", 0)
+	write("repos/abc/570", time.Hour)
+	retry := write("repos/abc/570/attempt-2", 0)
+	write("repos/abc/notanissue", 0)
+	got := runDirs(root)
+	if len(got) != 2 || got["424"] != cli || got["570"] != retry {
+		t.Fatalf("runDirs = %v", got)
+	}
+}
+
 func fake(t *testing.T, runs map[State]func(*Ctx) Out) {
 	old := steps
 	t.Cleanup(func() { steps = old })
