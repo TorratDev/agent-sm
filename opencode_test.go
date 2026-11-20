@@ -85,6 +85,19 @@ func TestOpencodeArgsAndConfig(t *testing.T) {
 	}
 }
 
+func TestCopilotModelOptions(t *testing.T) {
+	oldModels, oldAt := copilotCatalog.models, copilotCatalog.at
+	t.Cleanup(func() { copilotCatalog.models, copilotCatalog.at = oldModels, oldAt })
+	copilotCatalog.models, copilotCatalog.at = nil, time.Time{}
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "copilot"), "#!/bin/sh\n[ \"$1 $2\" = \"help config\" ] || exit 2\n"+
+		"printf '  `logLevel`: x\\n    - \"not-a-model\"\\n\\n  `model`: AI model to use.\\n    - \"gpt-5.5\"\\n    - \"claude-opus-5\"\\n\\n  `contextTier`: y\\n    - \"default\"\\n'\n", 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	if got := modelOptions("copilot"); !slices.Equal(got, []string{"auto", "claude-opus-5", "gpt-5.5"}) {
+		t.Fatalf("Copilot options = %v", got)
+	}
+}
+
 func TestOpencodeModelOptions(t *testing.T) {
 	if got := modelOptions("claude"); !slices.Contains(got, sonnet) || !slices.Contains(got, opus) {
 		t.Fatalf("Claude options = %v", got)

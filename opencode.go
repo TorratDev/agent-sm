@@ -396,32 +396,59 @@ func opencodeConfig(state State) map[string]any {
 	}
 }
 
-var opencodeCatalog struct {
+type modelCatalog struct {
 	sync.Mutex
 	at     time.Time
 	models []string
 }
 
-// opencodeModels returns the installed OpenCode CLI's model IDs. The catalog is
-// cached so the page's queue polling does not spawn a process every few seconds.
+var opencodeCatalog, copilotCatalog modelCatalog
+
+// opencodeModels returns the installed OpenCode CLI's model IDs.
 func opencodeModels() []string {
-	opencodeCatalog.Lock()
-	defer opencodeCatalog.Unlock()
-	if !opencodeCatalog.at.IsZero() && time.Since(opencodeCatalog.at) < 5*time.Minute {
-		return append([]string(nil), opencodeCatalog.models...)
+	return opencodeCatalog.list(func(out string) []string { return strings.Split(out, "\n") }, "opencode", "models")
+}
+
+// copilotModels returns the model IDs the installed Copilot CLI accepts for --model.
+// Copilot has no models command; `copilot help config` lists them under `model`.
+func copilotModels() []string {
+	return copilotCatalog.list(func(out string) []string {
+		_, rest, ok := strings.Cut(out, "`model`:")
+		if !ok {
+			return nil
+		}
+		var ids []string
+		for _, line := range strings.Split(rest, "\n")[1:] {
+			id, ok := strings.CutPrefix(strings.TrimSpace(line), "- \"")
+			if !ok {
+				break // the list ends at the first line that is not an entry
+			}
+			ids = append(ids, strings.TrimSuffix(id, "\""))
+		}
+		return ids
+	}, "copilot", "help", "config")
+}
+
+// list runs the CLI and caches its parsed, valid model IDs, so the page's queue
+// polling does not spawn a process every few seconds.
+func (c *modelCatalog) list(parse func(string) []string, name string, args ...string) []string {
+	c.Lock()
+	defer c.Unlock()
+	if !c.at.IsZero() && time.Since(c.at) < 5*time.Minute {
+		return append([]string(nil), c.models...)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "opencode", "models")
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()
 	if err != nil {
-		opencodeCatalog.at = time.Now()
-		return append([]string(nil), opencodeCatalog.models...)
+		c.at = time.Now()
+		return append([]string(nil), c.models...)
 	}
 	var models []string
 	seen := map[string]bool{}
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range parse(string(out)) {
 		line = strings.TrimSpace(line)
 		if line != "" && modelRe.MatchString(line) && !seen[line] {
 			seen[line] = true
@@ -429,7 +456,7 @@ func opencodeModels() []string {
 		}
 	}
 	sort.Strings(models)
-	opencodeCatalog.models, opencodeCatalog.at = models, time.Now()
+	c.models, c.at = models, time.Now()
 	return append([]string(nil), models...)
 }
 
@@ -483,6 +510,8 @@ func modelOptions(provider string) []string {
 			}
 		}
 		return models
+	case "copilot":
+		return append([]string{"auto"}, copilotModels()...)
 	default:
 		return []string{"auto"}
 	}
