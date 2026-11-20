@@ -220,6 +220,7 @@ type Ctx struct {
 }
 
 func logEvent(kv map[string]any) {
+	kv["t"] = time.Now().UTC().Format(time.RFC3339) // the board shows how long a run took
 	b, _ := json.Marshal(kv)
 	fmt.Fprintln(os.Stderr, string(b))
 	if eventsPath != "" { // the live view reads this file

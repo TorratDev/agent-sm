@@ -1,8 +1,11 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Every (state, out) a step may return must have a rule: next() must not panic.
@@ -148,5 +151,38 @@ func TestResume(t *testing.T) {
 	}
 	if _, err := resume(&Ctx{Issue: 8, Scratch: dir}, "review"); err == nil {
 		t.Error("another issue's ctx.json accepted")
+	}
+}
+
+func TestReadRun(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "412")
+	os.MkdirAll(dir, 0o755)
+	ev := `{"state":"prepare","out":"ok","cost_usd":0,"t":"2026-11-20T10:00:00Z"}
+{"state":"plan","out":"direct","cost_usd":0.1}
+{"state":"execute","out":"ok","cost_usd":0.4}
+{"state":"check","out":"fail","cost_usd":0.4}
+`
+	os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(ev), 0o644)
+	os.WriteFile(filepath.Join(dir, "ctx.json"), []byte(`{"Title":"Retry queue jobs","Feedback":"check failed: go vet\nlots of output","Verdict":"review (REVISE):\n- add a test\n- more"}`), 0o644)
+
+	rs, ok := readRun(dir, time.Now())
+	if !ok || rs.Live != "execute" || rs.Exit != "" || rs.Stalled || len(rs.Steps) != 4 || rs.Cost != 0.4 ||
+		rs.Title != "Retry queue jobs" || rs.Feedback != "check failed: go vet" || rs.Verdict != "review (REVISE): add a test" || rs.Started != "2026-11-20T10:00:00Z" {
+		t.Fatalf("running run = %+v", rs)
+	}
+	if rs, _ := readRun(dir, time.Now().Add(stallAfter+time.Minute)); !rs.Stalled {
+		t.Error("a run silent for longer than stallAfter is not stalled")
+	}
+	os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(ev+`{"event":"pr-opened","url":"https://x/pull/9"}
+{"exit":"ready","cost_usd":0.9,"t":"2026-11-20T10:20:00Z"}
+`), 0o644)
+	if rs, _ := readRun(dir, time.Now().Add(time.Hour)); rs.Exit != "ready" || rs.Live != "" || rs.Stalled || rs.PR == "" || rs.Cost != 0.9 {
+		t.Errorf("finished run = %+v", rs)
+	}
+	if _, ok := readRun(t.TempDir(), time.Now()); ok {
+		t.Error("a directory without events.jsonl is not a run")
+	}
+	if live := liveState([]runStep{{"plan", "ok"}, {"investigate", "more"}}); live != "investigate" {
+		t.Errorf("liveState after more = %q", live)
 	}
 }

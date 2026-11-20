@@ -3,276 +3,361 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>agent-sm run</title>
+<title>agent-sm</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;500&display=swap">
 <style>
   :root {
-    --bg: #f6f7f9; --panel: #fff; --ink: #1d1f23; --mute: #687080; --line: #e1e4ea; --soft: #f0f2f5;
-    --node: #f3f5f8; --node-ink: #1d1f23; --live: #1f6feb; --done: #1a7f37; --bad: #cf222e; --warn: #9a6700;
-    --edge: #8c95a3; --taken: #1f6feb;
-    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --bg: #eef1f5; --card: #f9fafc; --line: #cbd2dd; --soft: #e2e6ed; --ink: #14213d; --mute: #5a6478;
+    --live: #4b3fd8; --live-soft: #e4e1fa; --ok: #0e7c5a; --ok-soft: #d9efe6;
+    --bad: #c2361c; --bad-soft: #f7e0da; --warn: #a3660a; --warn-soft: #f4e8cf;
+    --strip: #121a2c; --strip-ink: #d5dbe8;
+    --sans: "Overpass", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Overpass Mono", ui-monospace, Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0f1115; --panel: #171a20; --ink: #e6e8ec; --mute: #8b93a1; --line: #262b34; --soft: #1d2129;
-      --node: #1f232b; --node-ink: #e6e8ec; --live: #58a6ff; --done: #3fb950; --bad: #f85149; --warn: #d29922;
-      --edge: #5d6675; --taken: #58a6ff;
+      --bg: #0d1220; --card: #141b2d; --line: #2c3650; --soft: #1d2539; --ink: #e3e8f2; --mute: #8d97ab;
+      --live: #8f86ff; --live-soft: #26244a; --ok: #3fbf8f; --ok-soft: #14302a;
+      --bad: #ef6a4f; --bad-soft: #3a1d18; --warn: #e0a43c; --warn-soft: #3a2c12;
+      --strip: #0a0f1b; --strip-ink: #d5dbe8;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
-  h1 { font: 600 20px/1.2 var(--mono); margin: 0; letter-spacing: -.01em; }
-  h1 .sub { font-weight: 500; }
-  #line { font: 12px var(--mono); color: var(--mute); overflow-wrap: anywhere; }
-  h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--mute); margin: 28px 0 8px; }
-  .sub { color: var(--mute); }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
-  .num, .card b, td { font-variant-numeric: tabular-nums; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  a { color: var(--live); }
+  button { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
 
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px; padding: 0; overflow: hidden; background: var(--line); }
-  .card { background: var(--panel); padding: 14px 16px; }
-  .card b { display: block; font: 600 22px/1.2 var(--mono); }
-  .card span { display: block; margin-top: 4px; color: var(--mute); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  /* header and tabs */
+  .top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .top > div { max-width: 1320px; margin: 0 auto; padding: 0 24px; display: flex; align-items: stretch; gap: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; letter-spacing: -.02em; padding: 12px 0; }
+  .mark { width: 30px; height: 12px; position: relative; }
+  .mark::before { content: ""; position: absolute; left: 2px; right: 2px; top: 4px; height: 4px; border-radius: 2px; background: var(--ink); }
+  .mark::after { content: ""; position: absolute; top: 0; left: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 3px solid var(--ink); box-shadow: 18px 0 0 -3px var(--live), 18px 0 0 0 var(--live); }
+  nav { display: flex; gap: 4px; }
+  .tab { border: 0; background: none; padding: 0 14px; font-weight: 600; color: var(--mute); border-bottom: 3px solid transparent; display: flex; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; }
+  .tab[aria-selected=true] { color: var(--ink); border-bottom-color: var(--ink); }
+  .badge { min-width: 20px; padding: 1px 6px 0; border-radius: 10px; font-size: 12px; font-weight: 700; text-align: center; background: var(--live); color: #fff; }
+  .badge.bad { background: var(--bad); }
+  .badge:empty { display: none; }
+  .repo { align-self: center; margin-left: auto; font: 13px var(--mono); color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  svg { width: 100%; height: auto; display: block; }
-  .node rect { fill: var(--node); stroke: var(--line); stroke-width: 1.5; rx: 9; }
-  .node text { fill: var(--node-ink); font: 500 12.5px var(--mono); text-anchor: middle; }
-  .node .sm { font-size: 10.5px; font-weight: 400; fill: var(--mute); }
-  .node.visited rect { stroke: var(--done); }
-  .node.live rect { stroke: var(--live); stroke-width: 2.5; fill: color-mix(in srgb, var(--live) 14%, var(--node)); animation: pulse 1.6s ease-in-out infinite; }
-  .node.exit { opacity: .55; }
-  .node.exit rect { fill: transparent; stroke: var(--edge); stroke-dasharray: 4 3; }
-  .node.exit.ready rect { stroke: var(--done); }
-  .node.exit.bad rect { stroke: var(--bad); }
-  .node.exit.visited { opacity: 1; }
-  .node.exit.visited rect { stroke-dasharray: none; stroke-width: 2.5; fill: var(--node); }
-  @keyframes pulse { 50% { stroke-opacity: .35; } }
-  @media (prefers-reduced-motion: reduce) { .node.live rect { animation: none; } }
-  /* the routes not taken stay readable on hover but recede, so the run's own path stands out */
-  .edge path { fill: none; stroke: var(--edge); stroke-width: 1.2; opacity: .45; }
-  .edge text { fill: var(--mute); font: 10px var(--mono); text-anchor: middle; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; opacity: .8; }
-  .edge.limit path { stroke-dasharray: 3 3; opacity: .25; }
-  .edge:hover path { opacity: 1; }
-  .edge.taken path { stroke: var(--taken); stroke-width: 2.2; opacity: 1; }
-  .edge.taken text { fill: var(--taken); font-weight: 700; opacity: 1; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--mute); font-size: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
-  .legend i { display: inline-block; width: 18px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--edge); }
-  .legend .k-live { width: 10px; height: 10px; border: 2px solid var(--live); border-radius: 3px; }
-  .legend .k-visit { width: 10px; height: 10px; border: 2px solid var(--done); border-radius: 3px; }
-  .legend .k-taken { border-color: var(--taken); }
-  .legend .k-limit { border-top-style: dashed; }
+  main { max-width: 1320px; margin: 0 auto; padding: 28px 24px 80px; }
+  .head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 14px; }
+  h2 { font-size: 20px; font-weight: 700; letter-spacing: -.015em; margin: 0; }
+  .note { font-size: 13px; color: var(--mute); }
+  .empty { padding: 32px; text-align: center; color: var(--mute); border: 1px dashed var(--line); border-radius: 10px; }
 
+  /* run cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
+  .card { --edge: var(--live); --tone-soft: var(--live-soft); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 4px 0 var(--edge); cursor: pointer; min-width: 0; }
+  .card:hover { border-color: color-mix(in srgb, var(--edge) 45%, var(--line)); }
+  .card.picked { outline: 2px solid var(--edge); outline-offset: 2px; }
+  .tone-good { --edge: var(--ok); --tone-soft: var(--ok-soft); }
+  .tone-bad { --edge: var(--bad); --tone-soft: var(--bad-soft); }
+  .tone-warn { --edge: var(--warn); --tone-soft: var(--warn-soft); }
+  .tone-idle { --edge: var(--line); --tone-soft: var(--soft); }
+  .c-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .c-n { font-size: 28px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px 1px 8px; font-size: 13px; font-weight: 700; background: var(--tone-soft); color: var(--edge); }
+  .tone-idle .pill { color: var(--mute); }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .c-meta { margin-left: auto; font-size: 13px; color: var(--mute); }
+  .c-title { all: unset; font-weight: 600; font-size: 16px; line-height: 1.35; text-wrap: pretty; cursor: pointer; overflow-wrap: anywhere; }
+  .c-title:focus-visible { outline: 2px solid var(--live); outline-offset: 2px; border-radius: 3px; }
+  .c-title.none { color: var(--mute); font-weight: 500; }
+  .c-line { margin: 2px -6px 0; }
+  .c-line svg { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--sans); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; gap: 6px; border-radius: 999px; padding: 1px 10px 0; font-size: 12px; font-weight: 600; background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
+  .tone-bad .chip { background: var(--bad-soft); color: var(--bad); }
+  .chip span { font-weight: 500; }
+  .reason { font-size: 13px; line-height: 1.45; background: var(--soft); border-radius: 6px; padding: 8px 10px; overflow-wrap: anywhere; }
+  .c-foot { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+  .c-branch { font: 12px var(--mono); color: var(--mute); }
+  .btn { margin-left: auto; padding: 7px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); cursor: pointer; font-weight: 600; font-size: 14px; text-decoration: none; color: var(--ink); }
+  .btn + .btn { margin-left: 0; }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+  .btn.danger { color: var(--bad); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn:focus-visible, .tab:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--live); outline-offset: 1px; }
+
+  /* the station line */
+  .l-base { stroke: var(--line); stroke-width: 4; stroke-linecap: round; opacity: .7; }
+  .l-run { stroke: var(--edge); stroke-width: 4; stroke-linecap: round; }
+  .arc path { fill: none; stroke: var(--warn); stroke-width: 2; stroke-dasharray: 4 3; stroke-linecap: round; stroke-linejoin: round; }
+  .arc.many path, .arc path.head { stroke-dasharray: none; }
+  .arc text { fill: var(--warn); font-size: 11px; font-weight: 700; text-anchor: middle; }
+  .tone-bad .arc path { stroke: var(--bad); } .tone-bad .arc text { fill: var(--bad); }
+  .s-todo { fill: var(--line); }
+  .s-skip { fill: var(--card); stroke: var(--edge); stroke-width: 2; }
+  .s-done { fill: var(--card); stroke: var(--edge); stroke-width: 4; }
+  .s-bounce { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 4; }
+  .s-dot { fill: var(--live); stroke: var(--card); stroke-width: 3; }
+  .s-halo { fill: none; stroke: var(--live); stroke-width: 2; opacity: .35; animation: halo 1.6s ease-in-out infinite; }
+  .stalled .s-dot { fill: var(--warn); } .stalled .s-halo { stroke: var(--warn); animation: none; }
+  .s-fail { fill: var(--bad); }
+  .s-x { fill: var(--card); font-size: 17px; font-weight: 800; text-anchor: middle; }
+  .s-name { fill: var(--mute); font-size: 11px; font-weight: 500; text-anchor: middle; }
+  .s-name.lit { fill: var(--ink); font-weight: 700; }
+  .s-note { fill: var(--mute); font-size: 11px; font-weight: 700; text-anchor: middle; }
+  .s-note.warn { fill: var(--warn); } .s-note.bad { fill: var(--bad); }
+  @keyframes halo { 50% { opacity: .1; } }
+  @media (prefers-reduced-motion: reduce) { .s-halo { animation: none; } }
+
+  /* the picked run */
+  #detail { margin-top: 36px; }
+  #detail .head { align-items: center; }
+  #dline { font: 12px var(--mono); color: var(--mute); overflow-wrap: anywhere; }
+  .close { margin-left: auto; }
+  h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--mute); margin: 22px 0 8px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
   .tablewrap { overflow-x: auto; padding: 4px 0; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 7px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   tbody tr:last-child td { border-bottom: 0; }
-  th { color: var(--mute); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
-  tbody tr:hover { background: var(--soft); }
+  th { color: var(--mute); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
   th.num, td.num { text-align: right; }
   td.st { font-family: var(--mono); font-size: 12.5px; }
-  .pill { display: inline-block; padding: 0 8px; border-radius: 999px; font: 600 11.5px/1.7 var(--mono); background: var(--soft); }
-  .pill.ok { background: color-mix(in srgb, var(--done) 15%, transparent); }
-  .pill.no { background: color-mix(in srgb, var(--bad) 15%, transparent); }
-  .pill.wait { background: color-mix(in srgb, var(--warn) 15%, transparent); }
-  .ok { color: var(--done); } .no { color: var(--bad); } .wait { color: var(--warn); }
+  .out { display: inline-block; padding: 1px 8px 0; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--ok-soft); color: var(--ok); }
+  .out.no { background: var(--bad-soft); color: var(--bad); } .out.wait { background: var(--warn-soft); color: var(--warn); }
+  .warnnum { color: var(--warn); font-weight: 700; } .sub { color: var(--mute); }
 
-  .issues { display: none; }
-  .issues.on { display: block; }
+  /* start runs */
   .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
   input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
   .toolbar input[type=text] { flex: 1; min-width: 160px; }
   .toolbar input[type=number] { width: 72px; }
   input[type=checkbox] { padding: 0; accent-color: var(--live); }
-  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--live); outline-offset: 1px; }
-  button { padding: 6px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--node); color: var(--ink); cursor: pointer; font: inherit; font-weight: 500; }
-  button:hover:not(:disabled) { border-color: var(--edge); }
-  button.primary { background: var(--live); border-color: var(--live); color: #fff; }
-  button:disabled { opacity: .5; cursor: default; }
-  .listbox { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 0; }
+  .toolbar .btn { margin-left: 0; }
+  .listbox { max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
   .lbl { font-size: 11px; color: var(--mute); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; margin-left: 4px; }
   #qstate { color: var(--mute); margin-top: 8px; font: 12px var(--mono); }
-  code { font: 12px var(--mono); }
-  .graphwrap { overflow-x: auto; }
+
   @media (max-width: 560px) {
-    .panel:not(.cards) { padding: 10px; } .card { padding: 12px; } th, td { padding: 6px 10px; }
-    #graph { min-width: 640px; } /* below this the labels are unreadable: scroll instead */
+    .top > div, main { padding-left: 16px; padding-right: 16px; }
+    .top > div { gap: 12px; flex-wrap: wrap; }
+    .repo { display: none; }
+    .grid { grid-template-columns: 1fr; }
+    .card { padding: 14px; }
+    th, td { padding: 6px 10px; }
   }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>agent-sm <span id="issue" class="sub"></span></h1>
-    <div id="line">waiting for data...</div>
-  </header>
+<header class="top"><div>
+  <div class="brand"><span class="mark" aria-hidden="true"></span>agent-sm</div>
+  <nav role="tablist">
+    <button class="tab" role="tab" data-view="pipeline" aria-selected="true">Pipeline <span class="badge" id="nRun"></span></button>
+    <button class="tab" role="tab" data-view="errors" aria-selected="false">Errors <span class="badge bad" id="nErr"></span></button>
+    <button class="tab" role="tab" data-view="start" aria-selected="false" id="startTab" hidden>Start runs</button>
+  </nav>
+  <span class="repo" id="repo"></span>
+</div></header>
 
-  <section class="issues" id="issuesPanel">
-    <h2>Process an issue</h2>
+<main>
+  <section id="board">
+    <div class="head"><h2 id="boardTitle">Pipeline</h2><span class="note" id="boardNote">One card per run. Arcs above the line are the times a result sent the run back to an earlier station.</span></div>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" hidden></div>
+
+    <section id="detail" hidden>
+      <div class="head"><h2 id="dtitle"></h2><span id="dline"></span><button class="btn close" id="dclose">Close</button></div>
+      <h3>Steps</h3>
+      <div class="panel tablewrap"><table id="steps"><thead><tr><th class="num">#</th><th>state</th><th>unit</th><th>result</th><th class="num">visit</th><th class="num">run cost</th></tr></thead><tbody></tbody></table></div>
+      <h3>Agent sessions</h3>
+      <div class="panel tablewrap"><table id="sessions"><thead><tr><th>state</th><th>unit</th><th>ok</th><th class="num">turns</th><th class="num">min</th><th class="num">tool calls</th><th class="num">denied</th><th class="num">output tok</th><th class="num">cache read</th><th class="num">cache write</th><th class="num">$</th></tr></thead><tbody></tbody></table></div>
+    </section>
+  </section>
+
+  <section id="start" hidden>
+    <div class="head"><h2>Start runs</h2><span class="note">Runs go one at a time, each in its own worktree.</span></div>
     <div class="panel">
       <div class="toolbar">
-        <input type="text" id="filter" placeholder="filter open issues by number, title or label">
-        <button id="refresh">Refresh</button>
+        <input type="text" id="filter" placeholder="filter open issues by number, title or label" aria-label="Filter issues">
+        <button class="btn" id="refresh">Refresh</button>
       </div>
       <div class="listbox tablewrap"><table id="issueTable"><tbody></tbody></table></div>
       <div class="toolbar" style="margin-top:8px">
         <label>Publish <select id="publish"><option value="">local only (staged branch)</option><option value="pr">open a draft PR</option></select></label>
         <label><input type="checkbox" id="audit"> audit mode</label>
         <label>Budget per step $ <input type="number" id="budget" value="2" min="0.5" step="0.5"></label>
-        <button class="primary" id="runBtn" disabled>Run selected</button>
-        <button id="stopBtn">Stop</button>
+        <button class="btn primary" id="runBtn" disabled>Run selected</button>
       </div>
       <div id="qstate"></div>
     </div>
   </section>
-
-  <h2>Now</h2>
-  <div class="cards panel" id="cards"></div>
-
-  <h2>State machine</h2>
-  <div class="panel">
-    <div class="graphwrap"><svg id="graph" viewBox="0 0 980 330" role="img" aria-label="State machine of the run"></svg></div>
-    <div class="legend">
-      <span><i class="k-live"></i>current state</span>
-      <span><i class="k-visit"></i>visited (xN: times run)</span>
-      <span><i class="k-taken"></i>transition taken</span>
-      <span><i></i>possible transition (hover to read)</span>
-      <span><i class="k-limit"></i>only after a retry limit</span>
-    </div>
-  </div>
-
-  <h2>Steps</h2>
-  <div class="panel tablewrap"><table id="steps"><thead><tr><th class="num">#</th><th>state</th><th>unit</th><th>result</th><th class="num">visit</th><th class="num">run cost</th></tr></thead><tbody></tbody></table></div>
-
-  <h2>Agent sessions</h2>
-  <div class="panel tablewrap"><table id="sessions"><thead><tr><th>state</th><th>unit</th><th>ok</th><th class="num">turns</th><th class="num">min</th><th class="num">tool calls</th><th class="num">denied</th><th class="num">output tok</th><th class="num">cache read</th><th class="num">cache write</th><th class="num">$</th></tr></thead><tbody></tbody></table></div>
 </main>
+
 <script>
-const NODES = { // x, y centres on a 960x330 canvas
-  prepare: [60, 90], plan: [195, 90], investigate: [335, 90], execute: [480, 90], check: [625, 90], review: [770, 90], publish: [915, 90],
-  "gave-up": [230, 270], errored: [400, 270], split: [570, 270], escalated: [740, 270], ready: [915, 270],
-};
-const BAD = new Set(["gave-up", "errored", "escalated"]);
-const W = 88, H = 40;
-const ns = "http://www.w3.org/2000/svg";
-const el = (tag, attrs = {}, text) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
-let EDGES = [];
 const TOKEN = "__TOKEN__";
-let ISSUES = [], SEL = new Set(), CAN_RUN = false, BUSY = false;
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-function edgePath(e) {
-  const [x1, y1] = NODES[e.from], [x2, y2] = NODES[e.to];
-  if (e.from === e.to) return { d: `M${x1 - 20},${y1 - H / 2} c-10,-34 50,-34 40,0`, lx: x1, ly: y1 - 46 };
-  if (e.exit) { // from a node's bottom to an exit box's top
-    const sx = x1, sy = y1 + H / 2, tx = x2, ty = y2 - H / 2, my = (sy + ty) / 2;
-    return { d: `M${sx},${sy} C${sx},${my} ${tx},${my} ${tx},${ty}`, lx: (sx + tx) / 2, ly: my };
-  }
-  if (x2 < x1) { // retry edge: arc over the top
-    const cy = y1 - 66 - 8 * Math.abs(Math.round((x1 - x2) / 130));
-    return { d: `M${x1 - 10},${y1 - H / 2} C${x1 - 10},${cy} ${x2 + 10},${cy} ${x2 + 10},${y2 - H / 2}`, lx: (x1 + x2) / 2, ly: cy + 14 };
-  }
-  return { d: `M${x1 + W / 2},${y1} L${x2 - W / 2 - 4},${y2}`, lx: (x1 + x2) / 2, ly: y1 - 6 };
-}
-
-function drawGraph(visits, live, taken, exit) {
-  const svg = document.getElementById("graph");
-  svg.replaceChildren();
-  const defs = el("defs");
-  const m = el("marker", { id: "ah", viewBox: "0 0 8 8", refX: 7, refY: 4, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" });
-  m.appendChild(el("path", { d: "M0,0 L8,4 L0,8 z", fill: "currentColor", style: "color:var(--edge)" }));
-  const mt = m.cloneNode(true); mt.id = "aht"; mt.firstChild.setAttribute("style", "color:var(--taken)");
-  defs.append(m, mt); svg.appendChild(defs);
-  const seenLabel = {};
-  for (const e of EDGES) {
-    if (!NODES[e.from] || !NODES[e.to]) continue;
-    const key = e.from + "|" + e.out;
-    const g = el("g", { class: "edge" + (e.limit ? " limit" : "") + (taken[key + "|" + e.to] ? " taken" : "") });
-    const p = edgePath(e);
-    const path = el("path", { d: p.d, "marker-end": taken[key + "|" + e.to] ? "url(#aht)" : "url(#ah)" });
-    g.appendChild(path);
-    const k = Math.round(p.lx) + "," + Math.round(p.ly);
-    const dy = (seenLabel[k] = (seenLabel[k] || 0) + 1) - 1;
-    const n = taken[key + "|" + e.to];
-    g.appendChild(el("title", {}, e.from + " -" + e.out + "-> " + e.to + (e.limit ? " (after the retry limit)" : "")));
-    if (!e.exit || n) g.appendChild(el("text", { x: p.lx, y: p.ly + dy * 11 }, e.out + (n > 1 ? " x" + n : ""))); // exit edges are labelled only once taken, hover for the rest
-    svg.appendChild(g);
-  }
-  for (const [name, [x, y]] of Object.entries(NODES)) {
-    const isExit = !(name in visits) && ["gave-up", "errored", "split", "escalated", "ready"].includes(name);
-    const cls = ["node"];
-    if (isExit) { cls.push("exit"); if (name === "ready") cls.push("ready"); if (BAD.has(name)) cls.push("bad"); }
-    if (visits[name]) cls.push("visited");
-    if (live === name) cls.push("live");
-    if (exit === name) cls.push(name === "ready" ? "ready" : "bad", "visited");
-    const g = el("g", { class: cls.join(" ") });
-    g.appendChild(el("rect", { x: x - W / 2, y: y - H / 2, width: W, height: H }));
-    g.appendChild(el("text", { x, y: y + 4 }, name));
-    if (visits[name]) g.appendChild(el("text", { x: x + W / 2 - 8, y: y - H / 2 + 12, class: "sm", "text-anchor": "end" }, "x" + visits[name]));
-    svg.appendChild(g);
-  }
-}
-
+const BAD_OUT = new Set(["fail", "blocked", "invalid", "split", "escalate"]);
+const ERR_EXIT = new Set(["gave-up", "errored", "escalated"]);
+let STATIONS = [], LIMITS = {}, RUNS = [], QUEUE = {}, ISSUES = [], SEL = new Set(), CAN_RUN = false;
+let VIEW = "pipeline", PICK = location.hash.slice(1);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = (n, d = 2) => (n == null ? "-" : Number(n).toFixed(d));
 const int = n => (n == null ? "-" : Number(n).toLocaleString("en-US"));
-const sec = s => s == null ? "-" : (s >= 60 ? Math.floor(s / 60) + "m " + (s % 60) + "s" : s + "s");
+const dur = ms => { const s = Math.max(0, Math.round(ms / 1000)), m = Math.floor(s / 60), h = Math.floor(m / 60);
+  return h ? `${h}h ${String(m % 60).padStart(2, "0")}m` : m ? `${m}m ${String(s % 60).padStart(2, "0")}s` : `${s}s`; };
 
-function render(data) {
-  document.getElementById("issue").textContent = data.issue ? "#" + data.issue : "(no run yet)";
-  const events = data.events || [], stats = data.stats || [], st = data.status;
-  const steps = events.filter(e => e.state && e.out);
-  const exitEv = events.filter(e => e.exit).pop();
-  const visits = {}, taken = {};
-  let prev = null;
-  steps.forEach(e => {
-    visits[e.state] = (visits[e.state] || 0) + 1;
+// derive turns one run into what its card draws: a station per state, and the jumps back.
+function derive(r) {
+  const idx = s => STATIONS.indexOf(s);
+  const visits = {}, last = {};
+  r.steps.forEach(v => { visits[v.state] = (visits[v.state] || 0) + 1; last[v.state] = v.out; });
+  const live = r.exit || r.queued ? null : r.live;
+  let far = -1;
+  STATIONS.forEach((s, i) => { if (visits[s] || live === s) far = i; });
+  const lastStep = r.steps[r.steps.length - 1];
+  const failAt = r.exit && r.exit !== "ready" && lastStep ? lastStep.state : null;
+  const stations = STATIONS.map((name, i) => {
+    const count = (visits[name] || 0) + (live === name ? 1 : 0), lim = LIMITS[name];
+    const st = live === name ? "live" : name === failAt ? "fail"
+      : visits[name] && BAD_OUT.has(last[name]) ? "bounce" : visits[name] ? "done" : i < far ? "skip" : "todo";
+    return { name, i, st, lit: i <= far, note: st === "fail" || st === "bounce" ? last[name] : "",
+      count: lim && count ? count + "/" + lim : count > 1 ? count + "×" : "" };
   });
-  // taken edges: each step's (state,out) leads to the next step's state, or to the exit
-  steps.forEach((e, i) => {
-    const nxt = steps[i + 1] ? steps[i + 1].state : (exitEv ? exitEv.exit : null);
-    if (nxt) { const k = e.state + "|" + e.out + "|" + nxt; taken[k] = (taken[k] || 0) + 1; }
+  const full = r.steps.slice();
+  if (live) full.push({ state: live, out: "now" });
+  const back = {};
+  for (let k = 0; k < full.length - 1; k++) {
+    const a = full[k], b = full[k + 1];
+    if (idx(b.state) < idx(a.state)) {
+      const key = a.state + "|" + a.out + "|" + b.state;
+      (back[key] ||= { from: a.state, out: a.out, to: b.state, count: 0, fi: idx(a.state), ti: idx(b.state) }).count++;
+    }
+  }
+  const backs = Object.values(back).map(b => {
+    const used = (visits[b.to] || 0) + (live === b.to ? 1 : 0), lim = LIMITS[b.to];
+    return { ...b, attempt: lim ? `attempt ${used} of ${lim}` : "" };
   });
-  const running = st && !exitEv;
-  const live = running ? st.state : null;
-  drawGraph(visits, live, taken, exitEv ? exitEv.exit : null);
-
-  const cost = exitEv ? exitEv.cost_usd : (steps.length ? steps[steps.length - 1].cost_usd : 0);
-  const cards = [];
-  cards.push(["state", exitEv ? "ended: " + exitEv.exit : (running ? st.state : "idle"), exitEv ? (exitEv.exit === "ready" ? "ok" : "no") : "wait"]);
-  if (running && st.units > 0) cards.push(["unit", st.unit_index + " / " + st.units + " " + (st.unit || ""), ""]);
-  if (running) { cards.push(["this step", sec(st.elapsed_s), ""]); cards.push(["tool calls", st.tool_calls, ""]); }
-  cards.push(["run cost", "$" + fmt(cost), ""]);
-  document.getElementById("cards").innerHTML = cards.map(c => `<div class="card"><b class="${c[2]}">${c[1]}</b><span>${c[0]}</span></div>`).join("");
-  document.getElementById("line").textContent = running && st.last_tool
-    ? "last: " + st.last_tool + (st.last_command ? " (" + st.last_command + ")" : "") + " - updated " + st.updated
-    : (exitEv ? "run finished" : "waiting for the first step");
-
-  const unitOf = {}; // investigate steps take the unit of the matching session, in order
-  const invStats = stats.filter(s => s.state === "investigate");
-  let ii = 0;
-  document.querySelector("#steps tbody").innerHTML = steps.map((e, i) => {
-    const unit = e.state === "investigate" ? ((invStats[ii++] || {}).unit || "") : "";
-    const cls = ["fail", "blocked", "invalid", "split", "escalate"].includes(e.out) ? "no" : (e.out === "more" ? "wait" : "ok");
-    return `<tr><td class="num sub">${i + 1}</td><td class="st">${e.state}</td><td>${esc(unit)}</td><td><span class="pill ${cls}">${e.out}</span></td><td class="num">${e.visit}</td><td class="num">$${fmt(e.cost_usd)}</td></tr>`;
-  }).join("");
-  document.querySelector("#sessions tbody").innerHTML = stats.map(s => {
-    const calls = Object.values(s.tool_calls || {}).reduce((a, b) => a + b, 0);
-    const den = s.permission_denials || 0;
-    return `<tr><td class="st">${s.state}</td><td>${esc(s.unit || "")}</td><td><span class="pill ${s.ok ? "ok" : "no"}">${s.ok ? "yes" : (s.killed ? "killed" : "no")}</span></td><td class="num">${s.turns}</td><td class="num">${fmt((s.duration_ms || 0) / 60000, 1)}</td><td class="num">${calls}</td><td class="num ${den ? "wait" : "sub"}">${den}</td><td class="num">${int(s.output_tokens)}</td><td class="num">${int(s.cache_read_tokens)}</td><td class="num">${int(s.cache_creation_tokens)}</td><td class="num">${fmt(s.cost_usd)}</td></tr>`;
-  }).join("");
+  const status = r.queued ? "queued" : r.stalled ? "stalled" : r.exit || live || "starting";
+  const tone = r.queued ? "idle" : r.stalled || r.exit === "split" ? "warn" : r.exit === "ready" ? "good" : r.exit ? "bad" : "run";
+  const reason = r.exit === "escalated" || r.exit === "split" ? r.verdict || r.feedback
+    : r.exit && r.exit !== "ready" ? r.feedback || r.verdict : !r.exit && backs.length ? r.feedback : "";
+  const end = r.ended ? Date.parse(r.ended) : r.exit ? NaN : Date.now();
+  const meta = [r.started && !isNaN(end) ? dur(end - Date.parse(r.started)) : "", r.cost_usd ? "$" + fmt(r.cost_usd) : ""].filter(Boolean).join(" · ");
+  return { ...r, live, far, stations, backs, status, tone, reason, meta };
 }
 
+function diagram(c) {
+  const n = STATIONS.length, X = i => 24 + i * (344 / Math.max(1, n - 1)), Y = 70;
+  const end = c.exit === "ready" ? X(n - 1) : X(Math.max(c.far, 0));
+  let s = `<line class="l-base" x1="${X(0)}" x2="${X(n - 1)}" y1="${Y}" y2="${Y}"/>`;
+  if (c.far >= 0) s += `<line class="l-run" x1="${X(0)}" x2="${end}" y1="${Y}" y2="${Y}"/>`;
+  for (const b of c.backs) {
+    const x1 = X(b.fi), x2 = X(b.ti), top = Math.max(-4, Y - 44 - (b.fi - b.ti) * 6), times = b.count > 1 ? " ×" + b.count : "";
+    s += `<g class="arc${b.count > 1 ? " many" : ""}"><title>${b.from} ${b.out} → ${b.to}${times}</title>`
+      + `<path d="M${x1} ${Y - 12} C${x1} ${top}, ${x2} ${top}, ${x2} ${Y - 14}"/>`
+      + `<path class="head" d="M${x2 - 4} ${Y - 19} L${x2} ${Y - 13} L${x2 + 4} ${Y - 19}"/>`
+      + `<text x="${(x1 + x2) / 2}" y="${top + 4}">${b.out}${times}</text></g>`;
+  }
+  for (const st of c.stations) {
+    const x = X(st.i);
+    s += `<g${st.st === "live" && c.stalled ? ' class="stalled"' : ""}><title>${st.name}</title>`;
+    if (st.st === "todo") s += `<circle class="s-todo" cx="${x}" cy="${Y}" r="5"/>`;
+    if (st.st === "skip") s += `<circle class="s-skip" cx="${x}" cy="${Y}" r="4"/>`;
+    if (st.st === "done") s += `<circle class="s-done" cx="${x}" cy="${Y}" r="7"/>`;
+    if (st.st === "bounce") s += `<circle class="s-bounce" cx="${x}" cy="${Y}" r="7"/>`;
+    if (st.st === "live") s += `<circle class="s-halo" cx="${x}" cy="${Y}" r="14"/><circle class="s-dot" cx="${x}" cy="${Y}" r="9"/>`;
+    if (st.st === "fail") s += `<circle class="s-fail" cx="${x}" cy="${Y}" r="12"/><text class="s-x" x="${x}" y="${Y + 5}">×</text>`;
+    s += `<text class="s-name${st.lit ? " lit" : ""}" x="${x}" y="${Y + 30}">${st.name}</text>`;
+    if (st.count || st.note) s += `<text class="s-note${st.note ? (st.st === "fail" ? " bad" : " warn") : ""}" x="${x}" y="${Y + 45}">${[st.count, st.note].filter(Boolean).join(" · ")}</text>`;
+    s += `</g>`;
+  }
+  return `<svg viewBox="0 0 392 122" role="img" aria-label="${esc(c.status)}: stations ${esc(c.stations.filter(x => x.lit).map(x => x.name).join(", "))}">${s}</svg>`;
+}
+
+function card(c) {
+  const running = QUEUE.running && String(QUEUE.running.issue) === String(c.issue);
+  const acts = (running && CAN_RUN ? `<button class="btn danger" data-act="stop">Stop</button>` : "")
+    + (c.pr ? `<a class="btn primary" href="${esc(c.pr)}" target="_blank" rel="noopener">Open PR</a>` : "");
+  return `<article class="card tone-${c.tone}${String(c.issue) === PICK ? " picked" : ""}" data-n="${esc(c.issue)}">
+    <div class="c-top"><span class="c-n">#${esc(c.issue)}</span><span class="pill">${esc(c.status)}</span><span class="c-meta">${esc(c.meta)}</span></div>
+    <button class="c-title${c.title ? "" : " none"}" data-act="pick">${esc(c.title || "untitled run")}</button>
+    <div class="c-line">${diagram(c)}</div>
+    ${c.backs.length ? `<div class="chips">${c.backs.map(b => `<span class="chip">${esc(b.from)} ${esc(b.out)} → ${esc(b.to)}${b.count > 1 ? " ×" + b.count : ""}<span>${b.attempt}</span></span>`).join("")}</div>` : ""}
+    ${c.reason ? `<div class="reason">${esc(c.reason)}</div>` : ""}
+    <div class="c-foot"><span class="c-branch">${c.queued ? "" : "sm/issue-" + esc(c.issue)}</span>${acts}</div>
+  </article>`;
+}
+
+// cards: the runs on disk, plus the queue's jobs that have not started writing yet.
+function cardsData() {
+  const by = new Map(RUNS.map(r => [String(r.issue), r]));
+  if (QUEUE.running && !by.has(String(QUEUE.running.issue))) by.set(String(QUEUE.running.issue), { issue: QUEUE.running.issue, steps: [], live: "prepare" });
+  for (const j of QUEUE.queued || []) by.set(String(j.issue), { issue: j.issue, steps: [], queued: true });
+  const title = n => (ISSUES.find(i => String(i.number) === String(n)) || {}).title || "";
+  const rank = c => c.tone === "run" ? 0 : c.stalled ? 1 : c.queued ? 2 : 3;
+  return [...by.values()].map(r => derive({ ...r, title: r.title || title(r.issue) }))
+    .sort((a, b) => rank(a) - rank(b) || String(b.ended || "").localeCompare(String(a.ended || "")) || Number(b.issue) - Number(a.issue));
+}
+
+function renderBoard() {
+  const all = cardsData();
+  const errs = all.filter(c => ERR_EXIT.has(c.exit) || c.stalled);
+  $("nRun").textContent = all.filter(c => c.live).length || "";
+  $("nErr").textContent = errs.length || "";
+  const list = VIEW === "errors" ? errs : all;
+  $("boardTitle").textContent = VIEW === "errors" ? "Errors" : "Pipeline";
+  $("boardNote").textContent = VIEW === "errors" ? "Runs that gave up, errored, were escalated, or stopped writing for 10 minutes."
+    : "One card per run. Arcs above the line are the times a result sent the run back to an earlier station.";
+  $("grid").innerHTML = list.map(card).join("");
+  $("empty").hidden = list.length > 0;
+  $("empty").textContent = VIEW === "errors" ? "No failed runs." : "No runs yet.";
+}
+
+function renderDetail(data) {
+  const r = RUNS.find(x => String(x.issue) === PICK) || {};
+  $("dtitle").textContent = "#" + PICK + (r.title ? " · " + r.title : "");
+  const st = data.status, ended = (data.events || []).some(e => e.exit);
+  $("dline").textContent = !ended && st && st.last_tool ? "last: " + st.last_tool + (st.last_command ? " (" + st.last_command + ")" : "") : "";
+  const steps = (data.events || []).filter(e => e.state && e.out), stats = data.stats || [];
+  const inv = stats.filter(s => s.state === "investigate");
+  let ii = 0;
+  document.querySelector("#steps tbody").innerHTML = steps.map((e, i) => {
+    const unit = e.state === "investigate" ? ((inv[ii++] || {}).unit || "") : "";
+    const cls = BAD_OUT.has(e.out) ? "no" : e.out === "more" ? "wait" : "";
+    return `<tr><td class="num sub">${i + 1}</td><td class="st">${esc(e.state)}</td><td>${esc(unit)}</td><td><span class="out ${cls}">${esc(e.out)}</span></td><td class="num">${e.visit}</td><td class="num">$${fmt(e.cost_usd)}</td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="sub">no steps yet</td></tr>`;
+  document.querySelector("#sessions tbody").innerHTML = stats.map(s => {
+    const calls = Object.values(s.tool_calls || {}).reduce((a, b) => a + b, 0), den = s.permission_denials || 0;
+    return `<tr><td class="st">${esc(s.state)}</td><td>${esc(s.unit || "")}</td><td><span class="out ${s.ok ? "" : "no"}">${s.ok ? "yes" : (s.killed ? "killed" : "no")}</span></td><td class="num">${s.turns}</td><td class="num">${fmt((s.duration_ms || 0) / 60000, 1)}</td><td class="num">${calls}</td><td class="num ${den ? "warnnum" : "sub"}">${den}</td><td class="num">${int(s.output_tokens)}</td><td class="num">${int(s.cache_read_tokens)}</td><td class="num">${int(s.cache_creation_tokens)}</td><td class="num">${fmt(s.cost_usd)}</td></tr>`;
+  }).join("") || `<tr><td colspan="11" class="sub">no agent sessions recorded</td></tr>`;
+}
+
+function pick(n) {
+  PICK = n ? String(n) : "";
+  history.replaceState(null, "", PICK ? "#" + PICK : location.pathname);
+  $("detail").hidden = !PICK;
+  renderBoard();
+  if (PICK) tick();
+}
+
+function show(view) {
+  VIEW = view;
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.view === view)));
+  $("board").hidden = view === "start";
+  $("start").hidden = view !== "start";
+  renderBoard();
+}
+
+// starting runs (only when the server was started with --repo)
 function renderIssues() {
-  const q = document.getElementById("filter").value.toLowerCase();
+  const q = $("filter").value.toLowerCase();
   const rows = ISSUES.filter(i => !q || ("#" + i.number + " " + i.title + " " + i.labels.map(l => l.name).join(" ")).toLowerCase().includes(q));
   document.querySelector("#issueTable tbody").innerHTML = rows.map(i =>
-    `<tr><td><input type="checkbox" data-n="${i.number}" ${SEL.has(i.number) ? "checked" : ""}></td><td>#${i.number}</td><td>${esc(i.title)}${i.labels.map(l => `<span class="lbl">${esc(l.name)}</span>`).join("")}</td></tr>`).join("")
-    || `<tr><td>no matching open issues</td></tr>`;
-  document.getElementById("runBtn").disabled = SEL.size === 0;
+    `<tr><td><input type="checkbox" aria-label="Select #${i.number}" data-n="${i.number}" ${SEL.has(i.number) ? "checked" : ""}></td><td>#${i.number}</td><td>${esc(i.title)}${i.labels.map(l => `<span class="lbl">${esc(l.name)}</span>`).join("")}</td></tr>`).join("")
+    || `<tr><td class="sub">no matching open issues</td></tr>`;
+  $("runBtn").disabled = SEL.size === 0;
 }
 async function loadIssues(refresh) {
   const r = await fetch("/api/issues" + (refresh ? "?refresh=1" : ""));
-  if (!r.ok) { document.getElementById("qstate").textContent = "cannot list issues: " + await r.text(); return; }
+  if (!r.ok) { $("qstate").textContent = "cannot list issues: " + await r.text(); return; }
   ISSUES = await r.json(); renderIssues();
 }
 async function post(path, body) {
@@ -281,46 +366,53 @@ async function post(path, body) {
   return r.json();
 }
 function renderQueue(q) {
+  QUEUE = q;
   const parts = [];
   if (q.running) parts.push(`running #${q.running.issue}` + (q.running.err ? " (" + q.running.err + ")" : ""));
   if (q.queued && q.queued.length) parts.push("queued: " + q.queued.map(j => "#" + j.issue).join(", "));
-  const hist = (q.history || []).slice(-5).map(j => `#${j.issue} ${j.exit || j.err || "?"}`);
-  if (hist.length) parts.push("finished: " + hist.join(", "));
-  document.getElementById("qstate").textContent = parts.join("  |  ") || "idle";
-  BUSY = !!q.running;
+  $("qstate").textContent = parts.join("  |  ") || "idle";
 }
-async function pollQueue() {
-  const q = await (await fetch("/api/queue")).json();
-  if (q.can_run && !CAN_RUN) { CAN_RUN = true; document.getElementById("issuesPanel").classList.add("on"); loadIssues(false); }
-  if (q.can_run) renderQueue(q);
-}
-document.getElementById("filter").addEventListener("input", renderIssues);
-document.getElementById("refresh").addEventListener("click", () => loadIssues(true));
-document.getElementById("issueTable").addEventListener("change", e => {
+
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => show(t.dataset.view)));
+$("grid").addEventListener("click", async e => {
+  const art = e.target.closest(".card");
+  if (!art || e.target.closest("a")) return;
+  if (e.target.closest("[data-act=stop]")) {
+    if (!confirm("Stop the running job and clear the queue?")) return;
+    try { renderQueue(await post("/api/stop")); renderBoard(); } catch (err) { alert("cannot stop: " + err.message); }
+    return;
+  }
+  pick(art.dataset.n === PICK ? "" : art.dataset.n);
+});
+$("dclose").addEventListener("click", () => pick(""));
+$("filter").addEventListener("input", renderIssues);
+$("refresh").addEventListener("click", () => loadIssues(true));
+$("issueTable").addEventListener("change", e => {
   const n = Number(e.target.dataset.n); if (!n) return;
   e.target.checked ? SEL.add(n) : SEL.delete(n); renderIssues();
 });
-document.getElementById("runBtn").addEventListener("click", async () => {
-  const issues = [...SEL].sort((a, b) => a - b);
-  const publish = document.getElementById("publish").value;
-  const msg = "Run " + issues.map(n => "#" + n).join(", ") + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?";
-  if (!confirm(msg)) return;
-  try { renderQueue(await post("/api/run", { issues, publish, audit: document.getElementById("audit").checked, budget: document.getElementById("budget").value })); SEL.clear(); renderIssues(); }
-  catch (e) { document.getElementById("qstate").textContent = "cannot start: " + e.message; }
-});
-document.getElementById("stopBtn").addEventListener("click", async () => {
-  if (!confirm("Stop the running job and clear the queue?")) return;
-  try { renderQueue(await post("/api/stop")); } catch (e) { document.getElementById("qstate").textContent = "cannot stop: " + e.message; }
+$("runBtn").addEventListener("click", async () => {
+  const issues = [...SEL].sort((a, b) => a - b), publish = $("publish").value;
+  if (!confirm("Run " + issues.map(n => "#" + n).join(", ") + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?")) return;
+  try { renderQueue(await post("/api/run", { issues, publish, audit: $("audit").checked, budget: $("budget").value })); SEL.clear(); renderIssues(); show("pipeline"); }
+  catch (err) { $("qstate").textContent = "cannot start: " + err.message; }
 });
 
 async function tick() {
   try {
-    if (!EDGES.length) EDGES = await (await fetch("/api/graph")).json();
-    render(await (await fetch("/api/state")).json());
-    await pollQueue();
-  } catch (e) { document.getElementById("line").textContent = "cannot reach the server: " + e; }
+    const [runs, q] = await Promise.all([fetch("/api/runs").then(r => r.json()), fetch("/api/queue").then(r => r.json())]);
+    RUNS = runs.runs; STATIONS = runs.stations; LIMITS = runs.limits;
+    if (q.can_run) {
+      renderQueue(q);
+      $("repo").textContent = q.repo || "";
+      if (!CAN_RUN) { CAN_RUN = true; $("startTab").hidden = false; loadIssues(false); }
+    }
+    renderBoard();
+    $("detail").hidden = !PICK;
+    if (PICK) renderDetail(await fetch("/api/state?issue=" + encodeURIComponent(PICK)).then(r => r.json()));
+  } catch (err) { $("boardNote").textContent = "cannot reach the server: " + err; }
 }
-tick(); setInterval(tick, 2000);
+tick(); setInterval(tick, 3000);
 </script>
 </body>
 </html>

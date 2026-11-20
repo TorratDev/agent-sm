@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +62,135 @@ func latestRun(root string) (dir, issue string) {
 	return dir, issue
 }
 
+// stallAfter: a run with no exit and no file written for this long is shown as stalled
+// (a long silent step, or a process that died without logging its exit).
+const stallAfter = 10 * time.Minute
+
+type runStep struct {
+	State string `json:"state"`
+	Out   string `json:"out"`
+}
+
+// runSummary is one card on the board, read from a run's scratch directory.
+type runSummary struct {
+	Issue    string    `json:"issue"`
+	Title    string    `json:"title"`
+	Steps    []runStep `json:"steps"`
+	Exit     string    `json:"exit,omitempty"`
+	Live     string    `json:"live,omitempty"` // the state running now, from next() on the last step
+	Stalled  bool      `json:"stalled,omitempty"`
+	LastTool string    `json:"last_tool,omitempty"`
+	Cost     float64   `json:"cost_usd"`
+	Started  string    `json:"started,omitempty"`
+	Ended    string    `json:"ended,omitempty"`
+	PR       string    `json:"pr,omitempty"`
+	Feedback string    `json:"feedback,omitempty"` // first line of the last check/review failure
+	Verdict  string    `json:"verdict,omitempty"`  // first line of the reviewer's reasons
+}
+
+// firstLine keeps the first line of s, plus the next one when the first is only a heading
+// ("review (REVISE):" is followed by the reasons).
+func firstLine(s string) string {
+	first, rest, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	if strings.HasSuffix(strings.TrimSpace(first), ":") {
+		next, _, _ := strings.Cut(rest, "\n")
+		first += " " + strings.TrimLeft(strings.TrimSpace(next), "- ")
+	}
+	return oneLine(first, 200)
+}
+
+// readRun summarizes the run in dir. ok is false when the directory holds no run.
+func readRun(dir string, now time.Time) (rs runSummary, ok bool) {
+	evPath := filepath.Join(dir, "events.jsonl")
+	fi, err := os.Stat(evPath)
+	if err != nil {
+		return rs, false
+	}
+	updated := fi.ModTime()
+	rs = runSummary{Issue: filepath.Base(dir), Steps: []runStep{}}
+	for _, l := range readLines(evPath, 5000) {
+		var e struct {
+			State, Out, Exit, Event, URL, T string
+			Cost                            float64 `json:"cost_usd"`
+		}
+		if json.Unmarshal(l, &e) != nil {
+			continue
+		}
+		if e.T != "" && rs.Started == "" {
+			rs.Started = e.T
+		}
+		switch {
+		case e.Event == "resume":
+			rs.Exit, rs.Ended = "", "" // a resumed run continues after its earlier exit
+		case e.State != "" && e.Out != "":
+			rs.Steps = append(rs.Steps, runStep{e.State, e.Out})
+			rs.Cost = e.Cost
+		case e.Exit != "":
+			rs.Exit, rs.Ended, rs.Cost = e.Exit, e.T, e.Cost
+		case e.Event == "pr-opened":
+			rs.PR = e.URL
+		}
+	}
+	var c struct{ Title, Feedback, Verdict string }
+	if b, err := os.ReadFile(filepath.Join(dir, "ctx.json")); err == nil && json.Unmarshal(b, &c) == nil {
+		rs.Title, rs.Feedback, rs.Verdict = c.Title, firstLine(c.Feedback), firstLine(c.Verdict)
+	}
+	if rs.Exit != "" {
+		return rs, true
+	}
+	rs.Live = liveState(rs.Steps)
+	var st struct {
+		LastTool string `json:"last_tool"`
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "status.json")); err == nil && json.Unmarshal(b, &st) == nil {
+		rs.LastTool = st.LastTool
+		if fi, err := os.Stat(filepath.Join(dir, "status.json")); err == nil && fi.ModTime().After(updated) {
+			updated = fi.ModTime()
+		}
+	}
+	rs.Stalled = now.Sub(updated) > stallAfter
+	return rs, true
+}
+
+// liveState replays the logged steps through next() to find the state running now.
+// status.json cannot say: it keeps the last agent step while check or publish run.
+func liveState(steps []runStep) (live string) {
+	if len(steps) == 0 {
+		return Prepare.String()
+	}
+	defer func() { // a log from an older table can hold a pair next() no longer knows
+		if recover() != nil {
+			live = ""
+		}
+	}()
+	byName := map[string]State{}
+	for s := State(0); s < numStates; s++ {
+		byName[s.String()] = s
+	}
+	outByName := map[string]Out{}
+	for o := Out(0); o < numOuts; o++ {
+		outByName[o.String()] = o
+	}
+	var visits [numStates]int
+	var n Next
+	for _, st := range steps {
+		s, ok1 := byName[st.State]
+		o, ok2 := outByName[st.Out]
+		if !ok1 || !ok2 {
+			return ""
+		}
+		visits[s]++
+		n = next(s, o, visits)
+		if o == More {
+			visits[s] = 0 // as run() does
+		}
+	}
+	if n.Exit != "" {
+		return "" // the exit event is about to be written
+	}
+	return n.State.String()
+}
+
 // serve shows a run live: GET / the page, /api/graph the transitions, /api/state the run so far.
 // It reads files only (status.json, events, stats), so it can also replay a finished run.
 // With no issue it follows the newest run under SM_SCRATCH_ROOT (default /tmp/agent-sm).
@@ -93,15 +223,31 @@ func serve(issue, addr, repo string) error {
 		w.Write([]byte(strings.Replace(string(indexHTML), "__TOKEN__", token, 1)))
 	})
 	mux.HandleFunc("/api/graph", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(edges()) })
+	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, r *http.Request) {
+		runs := []runSummary{}
+		dirs, _ := filepath.Glob(filepath.Join(root, "*"))
+		for _, d := range dirs {
+			if _, err := strconv.Atoi(filepath.Base(d)); err == nil {
+				if rs, ok := readRun(d, time.Now()); ok {
+					runs = append(runs, rs)
+				}
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"runs": runs, "stations": stateNames, "limits": map[string]int{"execute": maxExecute}})
+	})
 	mux.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
 		scratch, iss := os.Getenv("SM_SCRATCH"), issue
-		if scratch == "" && issue != "" {
-			scratch = filepath.Join(root, issue)
+		events := os.Getenv("SM_EVENTS")
+		if n, err := strconv.Atoi(r.URL.Query().Get("issue")); err == nil && n > 0 { // a card picked on the board
+			iss = strconv.Itoa(n)
+			scratch, events = filepath.Join(root, iss), ""
+		}
+		if scratch == "" && iss != "" {
+			scratch = filepath.Join(root, iss)
 		}
 		if scratch == "" {
 			scratch, iss = latestRun(root)
 		}
-		events := os.Getenv("SM_EVENTS")
 		if events == "" {
 			events = filepath.Join(scratch, "events.jsonl")
 		}
