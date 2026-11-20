@@ -380,6 +380,7 @@ requests and pushes to `main`, using the Go version in `go.mod`. Live agent smok
 remain opt-in and are not run in CI.
 
     go vet ./... && go test ./...
+    scripts/test-affected.sh                             # only tests affected by the diff vs origin/main
     SM_SMOKE=1 go test -run Smoke -v                     # opt-in: one real Copilot session
     SM_SMOKE=1 SM_PROVIDER=claude go test -run Smoke -v  # opt-in: one real Claude session
     SM_SMOKE=1 SM_PROVIDER=opencode go test -run Smoke -v # opt-in: one real OpenCode session

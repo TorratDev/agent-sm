@@ -19,6 +19,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # PRs check out a merge commit; its first parent is the base branch.
+          fetch-depth: 2
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -32,7 +35,10 @@ jobs:
           fi
       - name: Vet
         run: go vet ./...
-      - name: Test with race detector
-        run: go test -race ./...
+      - name: Test affected code with race detector
+        env:
+          # Pushes to main always run the full suite.
+          TEST_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+        run: scripts/test-affected.sh HEAD^1 -- -race
       - name: Build
         run: go build ./...
