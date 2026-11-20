@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -11,13 +13,108 @@ import (
 )
 
 var (
-	sepRe     = regexp.MustCompile(`&&|\|\||;|\||\n`)
-	wordRe    = regexp.MustCompile(`^[a-z./~][\w./~+-]*( [\w-]+)?$`) // a command starts lowercase, so hex addresses and prose do not count
-	heredocRe = regexp.MustCompile(`<<-?\s*['"]?(\w+)['"]?`)
-	quotedRe  = regexp.MustCompile(`'[^']*'|"[^"]*"`)
-	shKeyword = map[string]bool{"for": true, "do": true, "done": true, "if": true, "then": true, "fi": true, "else": true, "while": true, "case": true, "esac": true}
-	twoWord   = map[string]bool{"git": true, "gh": true, "cargo": true, "rtk": true, "ghidra": true}
+	sepRe         = regexp.MustCompile(`&&|\|\||;|\||\n`)
+	wordRe        = regexp.MustCompile(`^[a-z./~][\w./~+-]*( [\w-]+)?$`) // a command starts lowercase, so hex addresses and prose do not count
+	heredocRe     = regexp.MustCompile(`<<-?\s*['"]?(\w+)['"]?`)
+	quotedRe      = regexp.MustCompile(`'[^']*'|"[^"]*"`)
+	shKeyword     = map[string]bool{"for": true, "do": true, "done": true, "if": true, "then": true, "fi": true, "else": true, "while": true, "case": true, "esac": true}
+	twoWord       = map[string]bool{"git": true, "gh": true, "cargo": true, "rtk": true, "ghidra": true, "dotnet": true, "go": true}
+	issueBranchRe = regexp.MustCompile(`^sm/issue-([1-9][0-9]*)(?:-[1-9][0-9]*)?$`)
 )
+
+func issueBranchName(issue, attempt int) string {
+	name := "sm/issue-" + strconv.Itoa(issue)
+	if attempt > 0 {
+		name += "-" + strconv.Itoa(attempt)
+	}
+	return name
+}
+
+// An empty worktreeRoot selects only a branch, for direct CLI runs.
+func nextIssueBranch(repo string, issue int, worktreeRoot string) (string, string, error) {
+	registered := map[string]bool{}
+	if worktreeRoot != "" {
+		out, err := sh(repo, "git", "worktree", "list", "--porcelain", "-z")
+		if err != nil {
+			return "", "", fmt.Errorf("list worktrees: %w: %s", err, tail(out, 300))
+		}
+		for _, field := range strings.Split(out, "\x00") {
+			if path, ok := strings.CutPrefix(field, "worktree "); ok {
+				registered[filepath.Clean(path)] = true
+			}
+		}
+	}
+	for attempt := 0; ; attempt++ {
+		branch := issueBranchName(issue, attempt)
+		dir := ""
+		if worktreeRoot != "" {
+			suffix := strings.TrimPrefix(branch, issueBranchName(issue, 0))
+			dir = filepath.Join(worktreeRoot, strconv.Itoa(issue)+"-sm"+suffix)
+			if registered[dir] {
+				continue
+			}
+			if _, err := os.Lstat(dir); err == nil {
+				continue
+			} else if !os.IsNotExist(err) {
+				return "", "", fmt.Errorf("check worktree %s: %w", dir, err)
+			}
+		}
+		out, err := sh(repo, "git", "for-each-ref", "--format=%(refname)", "refs/heads/"+branch)
+		if err != nil {
+			return "", "", fmt.Errorf("check local branch %s: %w: %s", branch, err, tail(out, 300))
+		}
+		localTaken := false
+		for _, ref := range strings.Fields(out) {
+			if ref == "refs/heads/"+branch || strings.HasPrefix(ref, "refs/heads/"+branch+"/") {
+				localTaken = true
+				break
+			}
+		}
+		if localTaken {
+			continue
+		}
+		out, err = sh(repo, "git", "ls-remote", "--exit-code", "--heads", "origin", "refs/heads/"+branch, "refs/heads/"+branch+"/*")
+		if err == nil {
+			continue
+		}
+		if status, ok := err.(*exec.ExitError); !ok || status.ExitCode() != 2 {
+			return "", "", fmt.Errorf("check remote branch %s: %w: %s", branch, err, tail(out, 300))
+		}
+		out, err = sh(repo, "gh", "pr", "list", "--head", branch, "--state", "all", "--limit", "1", "--json", "number")
+		if err != nil {
+			return "", "", fmt.Errorf("check PRs for %s: %w: %s", branch, err, tail(out, 300))
+		}
+		var prs []struct {
+			Number int `json:"number"`
+		}
+		if err := json.Unmarshal([]byte(out), &prs); err != nil || prs == nil {
+			return "", "", fmt.Errorf("invalid PR lookup response for %s", branch)
+		}
+		for _, pr := range prs {
+			if pr.Number <= 0 {
+				return "", "", fmt.Errorf("invalid PR identity for %s", branch)
+			}
+		}
+		if len(prs) == 0 {
+			return branch, dir, nil
+		}
+	}
+}
+
+func checkRunBranch(c *Ctx) error {
+	match := issueBranchRe.FindStringSubmatch(c.Branch)
+	if match == nil || match[1] != strconv.Itoa(c.Issue) {
+		return fmt.Errorf("invalid run branch %q for issue %d", c.Branch, c.Issue)
+	}
+	out, err := sh(c.Repo, "git", "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err != nil {
+		return fmt.Errorf("read run branch: %w: %s", err, tail(out, 300))
+	}
+	if strings.TrimSpace(out) != c.Branch {
+		return fmt.Errorf("run branch changed: expected %s, got %s", c.Branch, strings.TrimSpace(out))
+	}
+	return nil
+}
 
 // stripHeredocs drops each heredoc body: the lines after a "<<WORD" marker up to the line holding WORD.
 func stripHeredocs(cmd string) string {
@@ -82,14 +179,14 @@ var outward = []string{"git push", "git commit", "git checkout", "git switch", "
 var auditDeny = func() string {
 	var l []string
 	for _, o := range outward {
-		l = append(l, "Bash("+o+":*)", "Bash(rtk "+o+":*)") // the RTK hook may prefix commands
+		l = append(l, "Bash("+o+":*)", "Bash(rtk "+o+":*)", "Bash(rtk proxy "+o+":*)")
 	}
 	return strings.Join(l, ",")
 }()
 
 // neverSuggest: a command key that must not be proposed for an allow list.
 func neverSuggest(key string) bool {
-	k := strings.TrimPrefix(key, "rtk ")
+	k := strings.TrimPrefix(strings.TrimPrefix(key, "rtk "), "proxy ")
 	if k == "rm" || k == "sudo" || k == "rtk" {
 		return true
 	}
@@ -101,18 +198,21 @@ func neverSuggest(key string) bool {
 	return false
 }
 
-// allowFor returns the per-state allow list from SM_ALLOW_FILE (JSON {"state": "tools"}) if it
-// names this state, else def.
-func allowFor(s State, def string) string {
-	b, err := os.ReadFile(os.Getenv("SM_ALLOW_FILE"))
-	if err != nil {
-		return def
+// withRTK adds, for every Bash(cmd:*) entry, the forms the RTK rule makes agents type:
+// "rtk cmd" and "rtk proxy cmd". Never a bare Bash(rtk:*): rtk can run any command.
+func withRTK(allow string) string {
+	out := allow
+	for _, a := range strings.Split(allow, ",") {
+		if cmd, ok := strings.CutPrefix(strings.TrimSpace(a), "Bash("); ok && !strings.HasPrefix(cmd, "rtk ") {
+			out += ",Bash(rtk " + cmd + ",Bash(rtk proxy " + cmd
+		}
 	}
-	var m map[string]string
-	if json.Unmarshal(b, &m) == nil && m[s.String()] != "" {
-		return m[s.String()]
-	}
-	return def
+	return out
+}
+
+// baseBranch is the branch runs start from and publish rebases onto (SM_BASE, default origin/main).
+func baseBranch() string {
+	return settings.Base
 }
 
 // suggestAllow builds an allow list from what a state really used, plus a small floor.
@@ -147,13 +247,14 @@ func suggestAllow(state string, called, bash map[string]int) string {
 
 var (
 	depHeadRe = regexp.MustCompile(`(?im)^#{1,6}\s*(depends on|dependencies)\b.*$`)
+	depListRe = regexp.MustCompile(`^(?:[-*+]|\d+[.)])\s+`)
+	depLineRe = regexp.MustCompile(`^(?:depends on|blocked by)\b`)
 	headRe    = regexp.MustCompile(`(?m)^#{1,6}\s`)
 	issueRe   = regexp.MustCompile(`#(\d+)`)
 )
 
-// dependencies lists the issues a body says it depends on: every #N of a "Dependencies" section
-// (except Parent, Epic and Related lines), or the #N on "depends on"/"blocked by" lines of a
-// "Depends on ..." section. A "Parent:" line is never a dependency.
+// dependencies reads list entries under "Dependencies" and explicit "depends on"/"blocked by"
+// lines under either dependency heading. Parent, Epic, Related and contextual prose are ignored.
 func dependencies(body string) []int {
 	loc := depHeadRe.FindStringIndex(body)
 	if loc == nil {
@@ -166,12 +267,16 @@ func dependencies(body string) []int {
 	}
 	var deps []int
 	for _, line := range strings.Split(rest, "\n") {
-		l := strings.ToLower(line)
+		l := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(line, "**", "")))
 		if strings.Contains(l, "parent") || strings.Contains(l, "epic") || strings.Contains(l, "related") {
 			continue
 		}
+		list := depListRe.FindStringIndex(l)
+		if list != nil {
+			l = l[list[1]:]
+		}
 		onlyDeps := strings.Contains(head, "dependencies")
-		if !onlyDeps && !strings.Contains(l, "depends on") && !strings.Contains(l, "blocked by") {
+		if !(onlyDeps && list != nil) && !depLineRe.MatchString(l) {
 			continue
 		}
 		for _, m := range issueRe.FindAllStringSubmatch(line, -1) {
@@ -189,6 +294,10 @@ func cleanupWorktree(c *Ctx) {
 	if !c.Merged {
 		return
 	}
+	if err := checkRunBranch(c); err != nil {
+		logEvent(map[string]any{"event": "cleanup-error", "err": err.Error()})
+		return
+	}
 	common, err := sh(c.Repo, "git", "rev-parse", "--path-format=absolute", "--git-common-dir")
 	repo, _ := filepath.Abs(c.Repo)
 	main := filepath.Dir(strings.TrimSpace(common))
@@ -200,6 +309,9 @@ func cleanupWorktree(c *Ctx) {
 		logEvent(map[string]any{"event": "cleanup-error", "out": tail(out, 300)})
 		return
 	}
-	sh(main, "git", "branch", "-D", "sm/issue-"+strconv.Itoa(c.Issue)) // already merged
+	if out, err := sh(main, "git", "branch", "-D", "--", c.Branch); err != nil {
+		logEvent(map[string]any{"event": "cleanup-error", "out": tail(out, 300)})
+		return
+	}
 	logEvent(map[string]any{"event": "worktree-removed", "path": repo})
 }

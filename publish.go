@@ -20,10 +20,18 @@ const (
 )
 
 // A "Refs" PR must never put close/fix/resolve next to an issue number, even negated:
-// GitHub would close the issue on merge (prompts/original/executor.md, step 6).
+// GitHub would close the issue on merge (prompts/original/executor.md, step 5).
 var closeWord = regexp.MustCompile(`(?i)\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b[^\n]{0,40}#\d+|#\d+[^\n]{0,40}\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b`)
 
-const footer = "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+func attribution() (string, string) {
+	switch settings.Provider {
+	case "claude":
+		return "Claude <noreply@anthropic.com>", "Generated with Claude Code via agent-sm."
+	case "opencode":
+		return "OpenCode <noreply@opencode.ai>", "Generated with OpenCode via agent-sm."
+	}
+	return "Copilot App <223556219+Copilot@users.noreply.github.com>", "Generated with GitHub Copilot via agent-sm."
+}
 
 func gh(c *Ctx, args ...string) (string, bool) {
 	out, err := sh(c.Repo, "gh", args...)
@@ -47,35 +55,49 @@ func publish(c *Ctx) Out {
 	if c.Level == levelNone {
 		return Ok
 	}
+	if err := checkRunBranch(c); err != nil {
+		logEvent(map[string]any{"event": "publish-error", "err": err.Error()})
+		return Fail
+	}
 	n := strconv.Itoa(c.Issue)
-	branch := "sm/issue-" + n
+	branch := c.Branch
 	if _, clean := sh(c.Repo, "git", "diff", "--cached", "--quiet"); clean == nil {
 		logEvent(map[string]any{"event": "publish-error", "err": "nothing staged"})
 		return Fail
 	}
-	model := c.Model
-	if model == "" {
-		model = "claude"
-	}
-	msg := fmt.Sprintf("%s (#%d)\n\nCo-Authored-By: Claude %s <noreply@anthropic.com>", c.Title, c.Issue, model)
+	author, footer := attribution()
+	msg := fmt.Sprintf("%s (#%d)\n\nCo-authored-by: %s", c.Title, c.Issue, author)
 	if _, ok := git(c, "commit", "-q", "-m", msg); !ok {
 		return Fail
 	}
 
-	// Rebase onto the latest main and rerun the checks before pushing.
-	if _, ok := git(c, "fetch", "origin", "main"); !ok {
-		return Fail
+	// Rebase onto the latest base branch and rerun the checks before pushing.
+	base := c.Base
+	if base == "" {
+		base = baseBranch()
+	}
+	if strings.HasPrefix(base, "origin/") {
+		if _, ok := git(c, "fetch", "--", "origin", strings.TrimPrefix(base, "origin/")); !ok {
+			return Fail
+		}
 	}
 	before, _ := git(c, "rev-parse", "HEAD")
-	if _, ok := git(c, "rebase", "origin/main"); !ok {
+	if _, ok := git(c, "rebase", base); !ok {
 		git(c, "rebase", "--abort")
 		return Fail
 	}
-	if after, _ := git(c, "rev-parse", "HEAD"); after != before && !runChecks(c) {
-		logEvent(map[string]any{"event": "publish-error", "err": "checks failed after rebase", "feedback": tail(c.Feedback, 500)})
-		return Fail
+	if after, _ := git(c, "rev-parse", "HEAD"); after != before {
+		if !runChecks(c) {
+			logEvent(map[string]any{"event": "publish-error", "err": "checks failed after rebase", "feedback": tail(c.Feedback, 500)})
+			return Fail
+		}
+		if status, ok := git(c, "status", "--porcelain"); !ok || status != "" {
+			logEvent(map[string]any{"event": "publish-error", "err": "checks changed the rebased worktree"})
+			return Fail
+		}
 	}
-	if _, ok := git(c, "push", "-u", "origin", branch); !ok {
+	// Create only: a branch pushed by another run must never be overwritten.
+	if _, ok := git(c, "push", "--force-with-lease=refs/heads/"+branch+":", "-u", "origin", branch); !ok {
 		return Fail
 	}
 
@@ -89,26 +111,42 @@ func publish(c *Ctx) Out {
 		logEvent(map[string]any{"event": "publish-error", "err": "closing word next to an issue number in a Refs PR", "title": c.Title})
 		return Fail
 	}
-	url, ok := gh(c, "pr", "create", "--draft", "--head", branch, "--title", c.Title, "--body", prBody)
+	title := c.Title
+	if c.JiraKey != "" && !jiraTitleKey(title, c.JiraKey) {
+		title = c.JiraKey + " " + title
+	}
+	url, ok := gh(c, "pr", "create", "--draft", "--base", strings.TrimPrefix(base, "origin/"), "--head", branch, "--title", title, "--body", prBody)
 	if !ok {
 		return Fail
 	}
 	pr := url[strings.LastIndex(url, "/")+1:]
 	logEvent(map[string]any{"event": "pr-opened", "url": url})
+	if settings.Management.Mode == "service" {
+		number, err := strconv.Atoi(pr)
+		if err != nil || number <= 0 {
+			c.ManagementError = "invalid created PR identity"
+			return Fail
+		}
+		if err := manageRun(c, false, number, "PR: "+url+"\nPASS: "+c.Verdict+"\n"+c.Evidence, false); err != nil {
+			return Fail
+		}
+	}
 
-	if c.PointsDerived && len(c.Points) > 0 { // the planner derived the points: post them on the issue
-		f := filepath.Join(c.Scratch, "points.md")
-		if os.WriteFile(f, []byte("Derived points:\n\n- "+strings.Join(c.Points, "\n- ")), 0o644) == nil {
-			gh(c, "issue", "comment", n, "--body-file", f)
+	if settings.Management.Mode != "service" {
+		if c.PointsDerived && len(c.Points) > 0 { // the planner derived the points: post them on the issue
+			f := filepath.Join(c.Scratch, "points.md")
+			if os.WriteFile(f, []byte("Derived points:\n\n- "+strings.Join(c.Points, "\n- ")), 0o644) == nil {
+				gh(c, "issue", "comment", n, "--body-file", f)
+			}
 		}
-	}
-	if c.Evidence != "" { // the investigator's findings, for later readers of the issue
-		f := filepath.Join(c.Scratch, "findings.md")
-		if os.WriteFile(f, []byte(c.Evidence), 0o644) == nil {
-			gh(c, "issue", "comment", n, "--body-file", f)
+		if c.Evidence != "" { // the investigator's findings, for later readers of the issue
+			f := filepath.Join(c.Scratch, "findings.md")
+			if os.WriteFile(f, []byte(c.Evidence), 0o644) == nil {
+				gh(c, "issue", "comment", n, "--body-file", f)
+			}
 		}
+		gh(c, "pr", "comment", pr, "--body", "PASS: "+c.Verdict)
 	}
-	gh(c, "pr", "comment", pr, "--body", "PASS: "+c.Verdict)
 
 	if c.Level != levelMerge {
 		return Ok
@@ -137,6 +175,15 @@ func publish(c *Ctx) Out {
 // followUp files the follow-up issue the orchestrator created after 3 REVISE rounds or a split.
 // It needs SM_EPIC (the epic the follow-up joins) and a publish level.
 func followUp(c *Ctx, exit Exit) {
+	if settings.Management.Mode == "service" {
+		if c.Proposal != nil || exit == SplitExit || (exit == GaveUp && c.Rounds >= maxExecute) {
+			if err := pendingFollowUp(c, exit); err != nil {
+				c.ManagementError = "cannot persist issue proposal: " + err.Error()
+				logEvent(map[string]any{"event": "issue-proposal-error", "err": err.Error()})
+			}
+		}
+		return
+	}
 	if c.Level == levelNone || !(exit == SplitExit || (exit == GaveUp && c.Rounds >= maxExecute)) {
 		return
 	}
@@ -158,7 +205,7 @@ func followUp(c *Ctx, exit Exit) {
 
 // stopGhidra ends any bridge on the run's project copy (the old end-of-epic check).
 func stopGhidra(c *Ctx) {
-	if c.Ghidra != "none" {
+	if settings.Legacy && c.Ghidra != "" && c.Ghidra != "none" {
 		sh(c.Repo, "ghidra", "--project", c.Ghidra, "--program", "arm9.bin", "stop")
 	}
 }

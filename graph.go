@@ -19,7 +19,7 @@ func edges() []Edge {
 			v[i] = visits
 		}
 		for s := State(0); s < numStates; s++ {
-			for _, o := range outs[s] {
+			for _, o := range steps[s].Outs {
 				n := next(s, o, v)
 				e := Edge{From: s.String(), Out: o.String(), Limit: visits > 0}
 				if n.Exit != "" {

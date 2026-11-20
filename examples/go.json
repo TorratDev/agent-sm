@@ -1,0 +1,7 @@
+{
+  "provider": "copilot",
+  "checks": ["test -z \"$(gofmt -l .)\"", "go vet ./...", "go test ./..."],
+  "commands": {
+    "execute": ["go test", "go vet", "gofmt"]
+  }
+}

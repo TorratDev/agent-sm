@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;500;600;700;800&family=Overpass+Mono:wght@400;500&display=swap">
 <style>
+  /* A transit map: states are stations, every run is a line through them. The line takes the
+     run's status colour; a run that ends badly stops at a red station. */
   :root {
     --bg: #eef1f5; --card: #f9fafc; --line: #cbd2dd; --soft: #e2e6ed; --ink: #14213d; --mute: #5a6478;
     --live: #4b3fd8; --live-soft: #e4e1fa; --ok: #0e7c5a; --ok-soft: #d9efe6;
@@ -186,8 +188,11 @@
         <label>Budget per step $ <input type="number" id="budget" value="2" min="0.5" step="0.5"></label>
         <button class="btn primary" id="runBtn" disabled>Run selected</button>
       </div>
-      <div id="qstate"></div>
-    </div>
+      <div id="deniedBox" hidden>
+        <div class="head"><h3>Denied commands</h3><span class="count">The allow list refused these. Add them to the state's allow list or change its prompt.</span></div>
+        <div class="panel" style="padding:14px 16px" id="denied"></div>
+      </div>
+    </section>
   </section>
 </main>
 
@@ -362,9 +367,23 @@ async function loadIssues(refresh) {
 }
 async function post(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "X-SM-Token": TOKEN, "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) throw Object.assign(new Error(await r.text()), { status: r.status });
   return r.json();
 }
+
+// Model IDs belong to the selected CLI's catalog, not a hardcoded web catalog.
+function saved() { try { return JSON.parse(localStorage.getItem("sm-models-" + QUEUE.provider)) || {}; } catch { return {}; } }
+function renderModels(defaults, options) {
+  if ($("models").children.length || !defaults) return; // built once: rebuilding would reset an open picker
+  const mine = saved(), choices = options || [];
+  $("models").innerHTML = Object.keys(defaults).map(state => {
+    const cur = mine[state] || defaults[state], list = "model-options-" + state;
+    return `<label>${state} <input class="field" list="${list}" data-state="${state}" value="${esc(cur)}" aria-label="${state} model"><datalist id="${list}">${choices.map(m => `<option value="${esc(m)}"></option>`).join("")}</datalist></label>`;
+  }).join("");
+}
+const chosenModels = () => Object.fromEntries([...document.querySelectorAll("#models input")].map(s => [s.dataset.state, s.value]));
+$("models").addEventListener("change", () => { try { localStorage.setItem("sm-models-" + QUEUE.provider, JSON.stringify(chosenModels())); } catch {} });
+
 function renderQueue(q) {
   QUEUE = q;
   const parts = [];
@@ -399,6 +418,7 @@ $("runBtn").addEventListener("click", async () => {
 });
 
 async function tick() {
+  clearTimeout(TIMER);
   try {
     const [runs, q] = await Promise.all([fetch("/api/runs").then(r => r.json()), fetch("/api/queue").then(r => r.json())]);
     RUNS = runs.runs; STATIONS = runs.stations; LIMITS = runs.limits;

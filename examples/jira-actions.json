@@ -1,0 +1,11 @@
+{
+  "provider": "copilot",
+  "checks": ["go vet ./...", "go test ./..."],
+  "jira": {
+    "mode": "actions",
+    "site": "https://your-team.atlassian.net",
+    "in_progress": "In Progress",
+    "in_review": "In Code Review",
+    "delivered": "Ready for Deploy"
+  }
+}

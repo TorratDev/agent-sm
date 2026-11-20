@@ -1,0 +1,26 @@
+{
+  "checks": ["go test ./..."],
+  "management": {
+    "mode": "service",
+    "host": "github.com",
+    "repo": "owner/repo",
+    "writers_disabled": true,
+    "workflows": [],
+    "identities": {"github-login": "jira-account-id"},
+    "github_assignee": "github-login"
+  },
+  "jira": {
+    "mode": "service",
+    "site": "https://tenant.atlassian.net",
+    "project": "PROJ",
+    "epic": "PROJ-1",
+    "story_type": "Story",
+    "task_type": "Sub-task",
+    "epic_type": "Epic",
+    "initial_statuses": ["To Do"],
+    "in_progress": "In Progress",
+    "in_review": "In Code Review",
+    "delivered": "Ready for Deploy",
+    "start_date_field": "customfield_12345"
+  }
+}

@@ -65,7 +65,7 @@ func (p *progress) tool(name string, in toolInput) {
 	}
 	what := in.FilePath
 	switch {
-	case name == "Bash":
+	case name == "Bash" || name == "bash" || name == "shell":
 		what = in.Command
 	case in.Pattern != "":
 		what = in.Pattern + " " + in.Path
@@ -85,7 +85,8 @@ func (p *progress) flush(force bool) {
 		"unit_index": p.c.UnitIdx + 1, "units": len(p.c.Units),
 		"elapsed_s": int(time.Since(p.start).Seconds()), "tool_calls": p.calls,
 		"last_tool": p.lastTool, "last_command": p.lastCmd, "feed": p.feed,
-		"run_cost_usd_before_this_step": p.c.Cost, "updated": p.last.Format(time.RFC3339),
+		"provider": settings.Provider, "usage_unit": settings.unit(), "usage_before_this_step": p.c.Cost,
+		"tool_telemetry_available": settings.Provider != "copilot", "updated": p.last.Format(time.RFC3339),
 	}, "", "  ")
 	os.WriteFile(filepath.Join(p.c.Scratch, "status.json"), b, 0o644)
 }

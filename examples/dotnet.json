@@ -1,0 +1,11 @@
+{
+  "provider": "copilot",
+  "checks": [
+    "dotnet build .",
+    "dotnet test"
+  ],
+  "required_test_reports": ["unit/*.trx"],
+  "commands": {
+    "execute": ["dotnet build", "dotnet test"]
+  }
+}

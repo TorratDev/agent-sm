@@ -4,14 +4,22 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
 
 // Every (state, out) a step may return must have a rule: next() must not panic.
 func TestTableHasNoHoles(t *testing.T) {
-	for s, list := range outs {
-		for _, o := range list {
+	for i, st := range steps {
+		s := State(i)
+		if st.Name == "" || st.Run == nil || len(st.Outs) == 0 {
+			t.Errorf("state %d is not fully declared: %+v", i, st)
+		}
+		if agentStep := st.Role != ""; agentStep != (st.Schema != "" && st.Allow != "") {
+			t.Errorf("%v: an agent step needs Role, Schema and Allow together", s)
+		}
+		for _, o := range st.Outs {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -21,9 +29,6 @@ func TestTableHasNoHoles(t *testing.T) {
 				next(s, o, [numStates]int{})
 			}()
 		}
-	}
-	if len(outs) != int(numStates) {
-		t.Errorf("outs declares %d states, want %d", len(outs), numStates)
 	}
 }
 
@@ -44,6 +49,17 @@ func TestLimits(t *testing.T) {
 	v[Review] = 1
 	if n := next(Review, Invalid, v); n.State != Review {
 		t.Errorf("first invalid = %+v, want retry", n)
+	}
+	v[Plan] = 1
+	if n := next(Execute, Blocked, v); n.State != Plan {
+		t.Errorf("first blocked execute = %+v, want re-plan", n)
+	}
+	v[Plan] = maxPlan
+	if n := next(Execute, Blocked, v); n.Exit != GaveUp {
+		t.Errorf("blocked execute after re-plan = %+v, want gave-up", n)
+	}
+	if n := next(Execute, Fail, v); n.Exit != Errored {
+		t.Errorf("execute management failure = %+v, want errored", n)
 	}
 }
 
@@ -87,6 +103,16 @@ func TestDependencies(t *testing.T) {
 	}
 	if d := dependencies("## Depends on\n- **Depends on:** #12\n- note #3"); len(d) != 1 || d[0] != 12 {
 		t.Errorf("depends-on line = %v, want [12]", d)
+	}
+	body := "## Dependencies\nSibling `depends_on`: `[]`.\n\n" +
+		"Story gates remain #54 -> #21/#22 -> #23 -> #24.\n" +
+		"See #20's checkpoint; this does not depend on #99.\n\n" +
+		"## Branching\n- Base branch: `feature` (parent Story #21)."
+	if d := dependencies(body); len(d) != 0 {
+		t.Errorf("contextual references became blockers: %v", d)
+	}
+	if d := dependencies("## Dependencies\n**Depends on:** #12\nBlocked by #13\n1. #14\n+ #15"); !slices.Equal(d, []int{12, 13, 14, 15}) {
+		t.Errorf("explicit entries = %v, want [12 13 14 15]", d)
 	}
 }
 
