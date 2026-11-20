@@ -6,71 +6,106 @@
 <title>agent-sm run</title>
 <style>
   :root {
-    --bg: #fafaf8; --panel: #fff; --ink: #1d1f23; --mute: #6b7078; --line: #d9dbe0;
-    --node: #eef0f4; --node-ink: #1d1f23; --live: #1f6feb; --done: #2da44e; --bad: #cf222e; --warn: #bf8700;
-    --edge: #9aa0aa; --taken: #1f6feb;
+    --bg: #f6f7f9; --panel: #fff; --ink: #1d1f23; --mute: #687080; --line: #e1e4ea; --soft: #f0f2f5;
+    --node: #f3f5f8; --node-ink: #1d1f23; --live: #1f6feb; --done: #1a7f37; --bad: #cf222e; --warn: #9a6700;
+    --edge: #8c95a3; --taken: #1f6feb;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #14161a; --panel: #1b1e24; --ink: #e6e8ec; --mute: #9aa0aa; --line: #2c3038;
-      --node: #262a32; --node-ink: #e6e8ec; --live: #58a6ff; --done: #3fb950; --bad: #f85149; --warn: #d29922;
-      --edge: #6b7280; --taken: #58a6ff;
+      --bg: #0f1115; --panel: #171a20; --ink: #e6e8ec; --mute: #8b93a1; --line: #262b34; --soft: #1d2129;
+      --node: #1f232b; --node-ink: #e6e8ec; --live: #58a6ff; --done: #3fb950; --bad: #f85149; --warn: #d29922;
+      --edge: #5d6675; --taken: #58a6ff;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
-  main { max-width: 1040px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--mute); margin: 20px 0 8px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+  h1 { font: 600 20px/1.2 var(--mono); margin: 0; letter-spacing: -.01em; }
+  h1 .sub { font-weight: 500; }
+  #line { font: 12px var(--mono); color: var(--mute); overflow-wrap: anywhere; }
+  h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--mute); margin: 28px 0 8px; }
   .sub { color: var(--mute); }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
-  .card b { display: block; font-size: 20px; }
-  .card span { color: var(--mute); font-size: 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .num, .card b, td { font-variant-numeric: tabular-nums; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px; padding: 0; overflow: hidden; background: var(--line); }
+  .card { background: var(--panel); padding: 14px 16px; }
+  .card b { display: block; font: 600 22px/1.2 var(--mono); }
+  .card span { display: block; margin-top: 4px; color: var(--mute); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+
   svg { width: 100%; height: auto; display: block; }
-  .node rect { fill: var(--node); stroke: var(--line); stroke-width: 1.5; rx: 8; }
-  .node text { fill: var(--node-ink); font-size: 13px; text-anchor: middle; }
-  .node .sm { font-size: 11px; fill: var(--mute); }
+  .node rect { fill: var(--node); stroke: var(--line); stroke-width: 1.5; rx: 9; }
+  .node text { fill: var(--node-ink); font: 500 12.5px var(--mono); text-anchor: middle; }
+  .node .sm { font-size: 10.5px; font-weight: 400; fill: var(--mute); }
   .node.visited rect { stroke: var(--done); }
-  .node.live rect { stroke: var(--live); stroke-width: 3; }
-  .node.exit rect { stroke-dasharray: 4 3; }
-  .node.exit.ready rect { stroke: var(--done); stroke-dasharray: none; }
-  .node.exit.bad rect { stroke: var(--bad); stroke-dasharray: none; }
-  .edge path { fill: none; stroke: var(--edge); stroke-width: 1.3; }
-  .edge text { fill: var(--mute); font-size: 10px; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
-  .edge.limit path { stroke-dasharray: 3 3; }
-  .edge.taken path { stroke: var(--taken); stroke-width: 2.4; }
-  .edge.taken text { fill: var(--taken); font-weight: 600; }
+  .node.live rect { stroke: var(--live); stroke-width: 2.5; fill: color-mix(in srgb, var(--live) 14%, var(--node)); animation: pulse 1.6s ease-in-out infinite; }
+  .node.exit { opacity: .55; }
+  .node.exit rect { fill: transparent; stroke: var(--edge); stroke-dasharray: 4 3; }
+  .node.exit.ready rect { stroke: var(--done); }
+  .node.exit.bad rect { stroke: var(--bad); }
+  .node.exit.visited { opacity: 1; }
+  .node.exit.visited rect { stroke-dasharray: none; stroke-width: 2.5; fill: var(--node); }
+  @keyframes pulse { 50% { stroke-opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .node.live rect { animation: none; } }
+  /* the routes not taken stay readable on hover but recede, so the run's own path stands out */
+  .edge path { fill: none; stroke: var(--edge); stroke-width: 1.2; opacity: .45; }
+  .edge text { fill: var(--mute); font: 10px var(--mono); text-anchor: middle; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; opacity: .8; }
+  .edge.limit path { stroke-dasharray: 3 3; opacity: .25; }
+  .edge:hover path { opacity: 1; }
+  .edge.taken path { stroke: var(--taken); stroke-width: 2.2; opacity: 1; }
+  .edge.taken text { fill: var(--taken); font-weight: 700; opacity: 1; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--mute); font-size: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .legend i { display: inline-block; width: 18px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--edge); }
+  .legend .k-live { width: 10px; height: 10px; border: 2px solid var(--live); border-radius: 3px; }
+  .legend .k-visit { width: 10px; height: 10px; border: 2px solid var(--done); border-radius: 3px; }
+  .legend .k-taken { border-color: var(--taken); }
+  .legend .k-limit { border-top-style: dashed; }
+
+  .tablewrap { overflow-x: auto; padding: 4px 0; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  th { color: var(--mute); font-weight: 500; }
-  .tablewrap { overflow-x: auto; }
+  th, td { text-align: left; padding: 7px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th { color: var(--mute); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  tbody tr:hover { background: var(--soft); }
+  th.num, td.num { text-align: right; }
+  td.st { font-family: var(--mono); font-size: 12.5px; }
+  .pill { display: inline-block; padding: 0 8px; border-radius: 999px; font: 600 11.5px/1.7 var(--mono); background: var(--soft); }
+  .pill.ok { background: color-mix(in srgb, var(--done) 15%, transparent); }
+  .pill.no { background: color-mix(in srgb, var(--bad) 15%, transparent); }
+  .pill.wait { background: color-mix(in srgb, var(--warn) 15%, transparent); }
   .ok { color: var(--done); } .no { color: var(--bad); } .wait { color: var(--warn); }
+
   .issues { display: none; }
   .issues.on { display: block; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
-  .toolbar input[type=text] { flex: 1; min-width: 160px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-  .toolbar input[type=number] { width: 70px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-  .toolbar select { padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
-  button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--node); color: var(--ink); cursor: pointer; font: inherit; }
+  input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+  .toolbar input[type=text] { flex: 1; min-width: 160px; }
+  .toolbar input[type=number] { width: 72px; }
+  input[type=checkbox] { padding: 0; accent-color: var(--live); }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--live); outline-offset: 1px; }
+  button { padding: 6px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--node); color: var(--ink); cursor: pointer; font: inherit; font-weight: 500; }
+  button:hover:not(:disabled) { border-color: var(--edge); }
   button.primary { background: var(--live); border-color: var(--live); color: #fff; }
   button:disabled { opacity: .5; cursor: default; }
-  .listbox { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
-  .listbox tr:hover { background: var(--node); }
+  .listbox { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 0; }
   .lbl { font-size: 11px; color: var(--mute); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; margin-left: 4px; }
-  #qstate { color: var(--mute); margin-top: 8px; }
-  code { font: 12px ui-monospace, monospace; }
-  #feed { font: 12px/1.5 ui-monospace, monospace; max-height: 260px; overflow: auto; }
-  #feed div { white-space: pre-wrap; word-break: break-word; padding: 1px 0; }
-  #feed .t { color: var(--mute); margin-right: 8px; }
-  #feed .tool { color: var(--live); } #feed .say { color: var(--ink); } #feed .error { color: var(--bad); }
-  .legend { color: var(--mute); font-size: 12px; margin-top: 6px; }
+  #qstate { color: var(--mute); margin-top: 8px; font: 12px var(--mono); }
+  code { font: 12px var(--mono); }
+  .graphwrap { overflow-x: auto; }
+  @media (max-width: 560px) {
+    .panel:not(.cards) { padding: 10px; } .card { padding: 12px; } th, td { padding: 6px 10px; }
+    #graph { min-width: 640px; } /* below this the labels are unreadable: scroll instead */
+  }
 </style>
 </head>
 <body>
 <main>
-  <h1>agent-sm <span id="issue" class="sub"></span></h1>
-  <div class="sub" id="line">waiting for data...</div>
+  <header>
+    <h1>agent-sm <span id="issue" class="sub"></span></h1>
+    <div id="line">waiting for data...</div>
+  </header>
 
   <section class="issues" id="issuesPanel">
     <h2>Process an issue</h2>
@@ -94,20 +129,23 @@
   <h2>Now</h2>
   <div class="cards panel" id="cards"></div>
 
-  <h2>Live activity</h2>
-  <div class="panel"><div id="feed"><span class="sub">nothing yet</span></div></div>
-
   <h2>State machine</h2>
   <div class="panel">
-    <svg id="graph" viewBox="0 0 980 330" role="img" aria-label="State machine of the run"></svg>
-    <div class="legend">Blue: current state. Green outline: visited. Bold blue arrows: transitions taken. Dashed arrows: only taken after a retry limit. Numbers on a node: how many times it ran.</div>
+    <div class="graphwrap"><svg id="graph" viewBox="0 0 980 330" role="img" aria-label="State machine of the run"></svg></div>
+    <div class="legend">
+      <span><i class="k-live"></i>current state</span>
+      <span><i class="k-visit"></i>visited (xN: times run)</span>
+      <span><i class="k-taken"></i>transition taken</span>
+      <span><i></i>possible transition (hover to read)</span>
+      <span><i class="k-limit"></i>only after a retry limit</span>
+    </div>
   </div>
 
   <h2>Steps</h2>
-  <div class="panel tablewrap"><table id="steps"><thead><tr><th>#</th><th>state</th><th>unit</th><th>result</th><th>visit</th><th>run cost</th></tr></thead><tbody></tbody></table></div>
+  <div class="panel tablewrap"><table id="steps"><thead><tr><th class="num">#</th><th>state</th><th>unit</th><th>result</th><th class="num">visit</th><th class="num">run cost</th></tr></thead><tbody></tbody></table></div>
 
   <h2>Agent sessions</h2>
-  <div class="panel tablewrap"><table id="sessions"><thead><tr><th>state</th><th>unit</th><th>ok</th><th>turns</th><th>min</th><th>tool calls</th><th>denied</th><th>output tok</th><th>cache read</th><th>cache write</th><th>$</th></tr></thead><tbody></tbody></table></div>
+  <div class="panel tablewrap"><table id="sessions"><thead><tr><th>state</th><th>unit</th><th>ok</th><th class="num">turns</th><th class="num">min</th><th class="num">tool calls</th><th class="num">denied</th><th class="num">output tok</th><th class="num">cache read</th><th class="num">cache write</th><th class="num">$</th></tr></thead><tbody></tbody></table></div>
 </main>
 <script>
 const NODES = { // x, y centres on a 960x330 canvas
@@ -143,14 +181,15 @@ function drawGraph(visits, live, taken, exit) {
   const defs = el("defs");
   const m = el("marker", { id: "ah", viewBox: "0 0 8 8", refX: 7, refY: 4, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" });
   m.appendChild(el("path", { d: "M0,0 L8,4 L0,8 z", fill: "currentColor", style: "color:var(--edge)" }));
-  defs.appendChild(m); svg.appendChild(defs);
+  const mt = m.cloneNode(true); mt.id = "aht"; mt.firstChild.setAttribute("style", "color:var(--taken)");
+  defs.append(m, mt); svg.appendChild(defs);
   const seenLabel = {};
   for (const e of EDGES) {
     if (!NODES[e.from] || !NODES[e.to]) continue;
     const key = e.from + "|" + e.out;
     const g = el("g", { class: "edge" + (e.limit ? " limit" : "") + (taken[key + "|" + e.to] ? " taken" : "") });
     const p = edgePath(e);
-    const path = el("path", { d: p.d, "marker-end": "url(#ah)" });
+    const path = el("path", { d: p.d, "marker-end": taken[key + "|" + e.to] ? "url(#aht)" : "url(#ah)" });
     g.appendChild(path);
     const k = Math.round(p.lx) + "," + Math.round(p.ly);
     const dy = (seenLabel[k] = (seenLabel[k] || 0) + 1) - 1;
@@ -175,6 +214,7 @@ function drawGraph(visits, live, taken, exit) {
 }
 
 const fmt = (n, d = 2) => (n == null ? "-" : Number(n).toFixed(d));
+const int = n => (n == null ? "-" : Number(n).toLocaleString("en-US"));
 const sec = s => s == null ? "-" : (s >= 60 ? Math.floor(s / 60) + "m " + (s % 60) + "s" : s + "s");
 
 function render(data) {
@@ -207,22 +247,18 @@ function render(data) {
     ? "last: " + st.last_tool + (st.last_command ? " (" + st.last_command + ")" : "") + " - updated " + st.updated
     : (exitEv ? "run finished" : "waiting for the first step");
 
-  const feed = (st && st.feed) || [];
-  document.getElementById("feed").innerHTML = feed.length
-    ? feed.slice().reverse().map(f => `<div><span class="t">${f.t}</span><span class="${f.kind}">${f.kind === "say" ? "says: " : ""}${esc(f.text)}</span></div>`).join("")
-    : '<span class="sub">nothing yet</span>';
-
   const unitOf = {}; // investigate steps take the unit of the matching session, in order
   const invStats = stats.filter(s => s.state === "investigate");
   let ii = 0;
   document.querySelector("#steps tbody").innerHTML = steps.map((e, i) => {
     const unit = e.state === "investigate" ? ((invStats[ii++] || {}).unit || "") : "";
     const cls = ["fail", "blocked", "invalid", "split", "escalate"].includes(e.out) ? "no" : (e.out === "more" ? "wait" : "ok");
-    return `<tr><td>${i + 1}</td><td>${e.state}</td><td>${unit}</td><td class="${cls}">${e.out}</td><td>${e.visit}</td><td>$${fmt(e.cost_usd)}</td></tr>`;
+    return `<tr><td class="num sub">${i + 1}</td><td class="st">${e.state}</td><td>${esc(unit)}</td><td><span class="pill ${cls}">${e.out}</span></td><td class="num">${e.visit}</td><td class="num">$${fmt(e.cost_usd)}</td></tr>`;
   }).join("");
   document.querySelector("#sessions tbody").innerHTML = stats.map(s => {
     const calls = Object.values(s.tool_calls || {}).reduce((a, b) => a + b, 0);
-    return `<tr><td>${s.state}</td><td>${s.unit || ""}</td><td class="${s.ok ? "ok" : "no"}">${s.ok ? "yes" : (s.killed ? "killed" : "no")}</td><td>${s.turns}</td><td>${fmt((s.duration_ms || 0) / 60000, 1)}</td><td>${calls}</td><td>${s.permission_denials || 0}</td><td>${s.output_tokens}</td><td>${s.cache_read_tokens}</td><td>${s.cache_creation_tokens}</td><td>${fmt(s.cost_usd)}</td></tr>`;
+    const den = s.permission_denials || 0;
+    return `<tr><td class="st">${s.state}</td><td>${esc(s.unit || "")}</td><td><span class="pill ${s.ok ? "ok" : "no"}">${s.ok ? "yes" : (s.killed ? "killed" : "no")}</span></td><td class="num">${s.turns}</td><td class="num">${fmt((s.duration_ms || 0) / 60000, 1)}</td><td class="num">${calls}</td><td class="num ${den ? "wait" : "sub"}">${den}</td><td class="num">${int(s.output_tokens)}</td><td class="num">${int(s.cache_read_tokens)}</td><td class="num">${int(s.cache_creation_tokens)}</td><td class="num">${fmt(s.cost_usd)}</td></tr>`;
   }).join("");
 }
 
