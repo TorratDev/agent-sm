@@ -58,6 +58,16 @@ func autoProvider() string {
 	return "copilot"
 }
 
+// installedProviders says which agent CLIs are on PATH, for the page's agent switch.
+func installedProviders() map[string]bool {
+	m := map[string]bool{}
+	for _, name := range []string{"claude", "copilot", "opencode"} {
+		_, err := exec.LookPath(name)
+		m[name] = err == nil
+	}
+	return m
+}
+
 func autoLanguageProfile(repo string) (Profile, error) {
 	root := repo
 	if root == "" {
@@ -646,7 +656,7 @@ type runRequest struct {
 func queueSnapshot(r *Runner, p Profile) map[string]any {
 	snap := r.Snapshot()
 	snap["provider"], snap["models"] = p.Provider, agentModelsFor(p)
-	snap["model_options"] = modelOptions(p.Provider)
+	snap["model_options"], snap["providers"] = modelOptions(p.Provider), installedProviders()
 	snap["transcripts"], snap["audit"] = p.Transcripts, p.Audit
 	snap["session_limit"], snap["usage_unit"] = p.SessionLimit, p.unit()
 	snap["run_limit"], snap["min_session_limit"] = p.RunLimit, 0.01

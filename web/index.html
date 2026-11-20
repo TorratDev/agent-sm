@@ -273,7 +273,8 @@
       <div class="toolbar">
         <label>Publish <select id="publish"><option value="">local only (staged branch)</option><option value="pr">open a draft PR</option></select></label>
         <label class="check"><input type="checkbox" id="audit"> audit mode</label>
-        <label>Budget per step $ <input type="number" id="budget" value="2" min="0.5" step="0.5"></label>
+        <label title="Which agent CLI runs the steps. The model lists below follow it.">Agent <select id="agent" aria-label="Agent"></select></label>
+        <label>Budget per step <span id="budgetUnit">$</span> <input type="number" id="budget" value="2" min="0.01" step="0.01"></label>
         <label title="How many queued issues run at once, each in its own worktree. Applies to every queue on this server.">In parallel <input type="number" id="parallel" value="1" min="1" max="16" step="1" style="width:4.5em"></label>
         <button class="btn primary go" id="runBtn" disabled>Run selected</button>
       </div>
@@ -451,6 +452,8 @@ const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? 
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 let REPO = store.get("sm-repo", ""), SHOWN = "", LIST = null;
 const withRepo = path => REPO ? path + (path.includes("?") ? "&" : "?") + "repo=" + encodeURIComponent(REPO) : path;
+let AGENT = store.get("sm-agent", ""); // empty: the server's own choice
+const withAgent = path => withRepo(AGENT ? path + "?provider=" + encodeURIComponent(AGENT) : path);
 const base = p => p.split(/[\\/]/).filter(Boolean).pop() || p;
 
 function renderRepo() {
@@ -520,7 +523,12 @@ async function post(path, body) {
 
 function renderQueue(q) {
   if (QUEUE.concurrency === undefined && q.concurrency) $("parallel").value = q.concurrency; // server value on first load only
-  QUEUE = q; renderModels(q);
+  if (QUEUE.provider !== q.provider) { // each agent has its own budget unit, minimum and default
+    const credits = q.usage_unit === "credits";
+    $("budgetUnit").textContent = credits ? "(credits)" : "$";
+    Object.assign($("budget"), { value: q.session_limit, min: q.min_session_limit, step: credits ? "1" : "0.01" });
+  }
+  QUEUE = q; renderModels(q); renderAgents(q);
   const parts = [];
   for (const j of q.running || []) parts.push(`running #${j.issue}` + (j.err ? " (" + j.err + ")" : ""));
   if (q.queued && q.queued.length) parts.push("queued: " + q.queued.map(j => "#" + j.issue).join(", "));
@@ -564,6 +572,12 @@ function renderModels(q) {
     <button class="btn reset" type="button" data-state="${esc(st)}" aria-label="Reset ${esc(st)} to default" title="Back to default">↺</button></div>`).join("");
   markModels();
 }
+function renderAgents(q) {
+  const html = Object.entries(q.providers || {}).sort().map(([name, ok]) =>
+    `<option value="${esc(name)}"${ok ? "" : " disabled"}${name === q.provider ? " selected" : ""}>${esc(name)}${ok ? "" : " (not installed)"}</option>`).join("");
+  if ($("agent").dataset.html !== html) { $("agent").innerHTML = $("agent").dataset.html = html; } // unchanged: keep an open picker
+}
+$("agent").addEventListener("change", e => { AGENT = e.target.value; store.set("sm-agent", AGENT); tick(); });
 function saveModels() { try { localStorage.setItem(MODEL_KEY(), JSON.stringify(chosenModels())); } catch {} markModels(); }
 $("modelGrid").addEventListener("change", saveModels);
 $("modelGrid").addEventListener("click", e => {
@@ -578,7 +592,7 @@ $("grid").addEventListener("click", async e => {
   if (!art || e.target.closest("a")) return;
   if (e.target.closest("[data-act=stop]")) {
     if (!confirm("Stop the running job and clear the queue?")) return;
-    try { renderQueue(await post(withRepo("/api/stop"))); renderBoard(); } catch (err) { alert("cannot stop: " + err.message); }
+    try { renderQueue(await post(withAgent("/api/stop"))); renderBoard(); } catch (err) { alert("cannot stop: " + err.message); }
     return;
   }
   pick(art.dataset.n === PICK ? "" : art.dataset.n);
@@ -606,17 +620,17 @@ $("useRepo").addEventListener("click", () => LIST && LIST.repo && setRepo(LIST.r
 $("runBtn").addEventListener("click", async () => {
   const issues = [...SEL].sort((a, b) => a - b), publish = $("publish").value;
   if (!confirm("Run " + issues.map(n => "#" + n).join(", ") + " in " + base(SHOWN) + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?")) return;
-  try { renderQueue(await post("/api/run", { issues, repo: REPO || undefined, publish, audit: $("audit").checked, budget: $("budget").value, concurrency: Math.min(16, Math.max(1, parseInt($("parallel").value, 10) || 1)), models: chosenModels() })); SEL.clear(); renderIssues(); show("pipeline"); }
+  try { renderQueue(await post("/api/run", { issues, repo: REPO || undefined, publish, audit: $("audit").checked, budget: $("budget").value, provider: QUEUE.provider, concurrency: Math.min(16, Math.max(1, parseInt($("parallel").value, 10) || 1)), models: chosenModels() })); SEL.clear(); renderIssues(); show("pipeline"); }
   catch (err) { $("qstate").textContent = "cannot start: " + err.message; }
 });
 
 async function tick() {
   try {
     const [runs, q] = await Promise.all([fetch("/api/runs").then(r => r.json()),
-      fetch(withRepo("/api/queue")).then(async r => r.ok ? r.json() : { error: await r.text() })]);
+      fetch(withAgent("/api/queue")).then(async r => r.ok ? r.json() : { error: await r.text() })]);
     RUNS = runs.runs; STATIONS = runs.stations; LIMITS = runs.limits;
     if (q.error) $("qstate").textContent = "cannot use " + REPO + ": " + q.error;
-    else if (q.can_run) renderQueue(q);
+    else if (q.can_run && (!AGENT || q.provider === AGENT)) renderQueue(q); // skip a poll answered for the previous agent
     if ((q.repo || "") !== SHOWN) { SHOWN = q.repo || ""; renderRepo(); if (SHOWN) loadIssues(false); else { renderIssues(); if (!LIST) toggleBrowser(true); } }
     renderBoard();
     $("detail").hidden = !PICK;
