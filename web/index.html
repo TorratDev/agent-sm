@@ -261,6 +261,7 @@
         <label>Publish <select id="publish"><option value="">local only (staged branch)</option><option value="pr">open a draft PR</option></select></label>
         <label class="check"><input type="checkbox" id="audit"> audit mode</label>
         <label>Budget per step $ <input type="number" id="budget" value="2" min="0.5" step="0.5"></label>
+        <label title="How many queued issues run at once, each in its own worktree. Applies to every queue on this server.">In parallel <input type="number" id="parallel" value="1" min="1" max="16" step="1" style="width:4.5em"></label>
         <button class="btn primary go" id="runBtn" disabled>Run selected</button>
       </div>
       <div id="qstate"></div>
@@ -501,6 +502,7 @@ async function post(path, body) {
 }
 
 function renderQueue(q) {
+  if (QUEUE.concurrency === undefined && q.concurrency) $("parallel").value = q.concurrency; // server value on first load only
   QUEUE = q;
   const parts = [];
   for (const j of q.running || []) parts.push(`running #${j.issue}` + (j.err ? " (" + j.err + ")" : ""));
@@ -542,7 +544,7 @@ $("useRepo").addEventListener("click", () => LIST && LIST.repo && setRepo(LIST.r
 $("runBtn").addEventListener("click", async () => {
   const issues = [...SEL].sort((a, b) => a - b), publish = $("publish").value;
   if (!confirm("Run " + issues.map(n => "#" + n).join(", ") + " in " + base(SHOWN) + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?")) return;
-  try { renderQueue(await post("/api/run", { issues, repo: REPO || undefined, publish, audit: $("audit").checked, budget: $("budget").value })); SEL.clear(); renderIssues(); show("pipeline"); }
+  try { renderQueue(await post("/api/run", { issues, repo: REPO || undefined, publish, audit: $("audit").checked, budget: $("budget").value, concurrency: Math.min(16, Math.max(1, parseInt($("parallel").value, 10) || 1)) })); SEL.clear(); renderIssues(); show("pipeline"); }
   catch (err) { $("qstate").textContent = "cannot start: " + err.message; }
 });
 
