@@ -109,6 +109,37 @@
   @keyframes halo { 50% { opacity: .1; } }
   @media (prefers-reduced-motion: reduce) { .s-halo { animation: none; } }
 
+  /* the shared line: every run at once, a count per station */
+  .flow { overflow-x: auto; margin-bottom: 20px; padding: 14px 8px 12px; }
+  /* subgrid rows keep every station's node on one line however many chips stack above it */
+  .flow ol { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(96px, 1fr)); grid-template-rows: auto auto auto auto; min-width: calc(var(--n) * 96px); }
+  .flow li { position: relative; display: grid; grid-row: span 4; grid-template-rows: subgrid; justify-items: center; row-gap: 4px; }
+  .f-chips { align-self: end; display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; padding: 0 4px 6px; }
+  .f-stop { position: relative; width: 100%; height: 34px; display: grid; place-items: center; }
+  .f-stop::before, .f-stop::after { content: ""; position: absolute; top: 15px; height: 4px; width: 50%; background: var(--line); }
+  .f-stop::before { left: 0; } .f-stop::after { right: 0; }
+  li:first-child .f-stop::before, li:last-child .f-stop::after { display: none; }
+  .f-stop.l-in::before, .f-stop.l-out::after { background: var(--live); box-shadow: 0 0 10px color-mix(in srgb, var(--live) 50%, transparent); }
+  .f-chip { border: 0; border-radius: 999px; padding: 1px 7px 0; font-size: 11.5px; font-weight: 700; background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
+  button.f-chip { cursor: pointer; } button.f-chip:hover { outline: 1px solid currentColor; }
+  .f-chip.idle { background: var(--soft); color: var(--mute); }
+  .f-chip.on { background: var(--live-soft); color: var(--live); font-family: var(--mono); }
+  .f-chip.back { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 3px 10px 2px 8px; border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); }
+  .f-chip.back svg { flex: none; margin-top: -1px; }
+  .f-chip.ok { background: var(--ok-soft); color: var(--ok); font-family: var(--mono); }
+  .f-chip.bad { background: var(--bad-soft); color: var(--bad); font-family: var(--mono); }
+  .f-chip.idle { font-family: var(--mono); }
+  .f-node { position: relative; z-index: 1; width: 24px; height: 24px; border-radius: 50%; background: var(--line); border: 5px solid var(--card); box-shadow: 0 0 0 2px var(--line); }
+  .f-node.past { background: var(--card); box-shadow: 0 0 0 4px var(--live); border-color: var(--card); }
+  .f-node.on { background: var(--live-soft); box-shadow: 0 0 0 4px var(--live), 0 0 0 9px color-mix(in srgb, var(--live) 25%, transparent); animation: glow 1.6s ease-in-out infinite; }
+  @keyframes glow { 50% { box-shadow: 0 0 0 4px var(--live), 0 0 0 13px color-mix(in srgb, var(--live) 8%, transparent); } }
+  @media (prefers-reduced-motion: reduce) { .f-node.on { animation: none; } }
+  .f-name { font-size: 14px; color: var(--mute); }
+  .f-name.lit { color: var(--ink); font-weight: 600; }
+  .f-note { font-size: 12px; font-weight: 700; color: var(--live); min-height: 18px; text-align: center; }
+  .f-note .bad { color: var(--bad); }
+  .f-pass { position: absolute; top: 24px; right: 0; transform: translateX(50%); z-index: 1; border-radius: 999px; padding: 1px 8px 0; font-size: 11.5px; font-weight: 700; background: var(--live-soft); color: var(--live); border: 1px solid color-mix(in srgb, var(--live) 40%, transparent); white-space: nowrap; }
+
   /* the picked run */
   #detail { margin-top: 36px; }
   #detail .head { align-items: center; }
@@ -222,7 +253,8 @@
 
 <main>
   <section id="board">
-    <div class="head"><h2 id="boardTitle">Pipeline</h2><span class="note" id="boardNote">One card per run. Arcs above the line are the times a result sent the run back to an earlier station.</span></div>
+    <div class="head"><h2 id="boardTitle">Pipeline</h2><span class="note" id="boardNote">All runs on one line: who is at each station now, how many got past it (+N), and where a result sent runs back (↩ station ×N). Click a number to open that run.</span></div>
+    <div class="panel flow" id="flow"></div>
     <div class="grid" id="grid"></div>
     <div class="empty" id="empty" hidden></div>
 
@@ -380,7 +412,7 @@ function card(c) {
   return `<article class="card tone-${c.tone}${String(c.issue) === PICK ? " picked" : ""}" data-n="${esc(c.issue)}">
     <div class="c-top"><span class="c-n">#${esc(c.issue)}</span><span class="pill">${esc(c.status)}</span><span class="c-meta">${esc(c.meta)}</span></div>
     <button class="c-title${c.title ? "" : " none"}" data-act="pick">${esc(c.title || "untitled run")}</button>
-    <div class="c-line">${diagram(c)}</div>
+    ${VIEW === "errors" ? `<div class="c-line">${diagram(c)}</div>` : ""}
     ${c.backs.length ? `<div class="chips">${c.backs.map(b => `<span class="chip">${esc(b.from)} ${esc(b.out)} → ${esc(b.to)}${b.count > 1 ? " ×" + b.count : ""}<span>${b.attempt}</span></span>`).join("")}</div>` : ""}
     ${c.reason ? `<div class="reason">${esc(c.reason)}</div>` : ""}
     <div class="c-foot"><span class="c-branch">${c.queued ? "" : "sm/issue-" + esc(c.issue)}</span>${acts}</div>
@@ -398,17 +430,49 @@ function cardsData() {
     .sort((a, b) => rank(a) - rank(b) || String(b.ended || "").localeCompare(String(a.ended || "")) || Number(b.issue) - Number(a.issue));
 }
 
+const BACK_ICON = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M6 3 2 7l4 4M2 7h8a4 4 0 0 1 0 8H8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+// flow draws all runs on one line: who is at each station now, how many got past it, failed or were sent back from it.
+function flow(all) {
+  const n = STATIONS.length, live = all.filter(c => c.live);
+  const reach = Math.max(-1, ...live.map(c => STATIONS.indexOf(c.live)));
+  const queued = all.filter(c => c.queued);
+  // shortcut: shows the first 12 issue numbers per station and "+k" for the rest; a station list would be next
+  const tags = (cs, cls, why) => cs.slice(0, 12).map(c => `<button class="f-chip ${cls}" data-n="${esc(c.issue)}" title="#${esc(c.issue)} ${esc(c.title || "")} · ${why}">#${esc(c.issue)}</button>`).join("")
+    + (cs.length > 12 ? `<span class="f-chip ${cls}" title="${cs.slice(12).map(c => "#" + c.issue).join(" ")}">+${cs.length - 12}</span>` : "");
+  const items = STATIONS.map((name, i) => {
+    const on = live.filter(c => c.live === name);
+    const passed = all.filter(c => c.far > i || (c.exit === "ready" && i < n - 1));
+    const failed = all.filter(c => c.stations[i].st === "fail");
+    const sent = {};
+    all.forEach(c => c.backs.filter(b => b.fi === i).forEach(b => sent[b.to] = (sent[b.to] || 0) + b.count));
+    const chips = (i === 0 ? tags(queued, "idle", "queued") : "") + tags(on, "on", "here now") + tags(failed, "bad", "ended here")
+      + (i === n - 1 ? tags(all.filter(c => c.exit === "ready"), "ok", "finished") : "")
+      + Object.entries(sent).map(([to, k]) => `<span class="f-chip back" title="${esc(name)} sent a run back to ${esc(to)} ${k}×">${BACK_ICON}${esc(to)}${k > 1 ? ` ×${k}` : ""}</span>`).join("");
+    const note = [on.length ? `${on.length}× active` : "", failed.length ? `<span class="bad">${failed.length} failed</span>` : ""].filter(Boolean).join(" · ");
+    return `<li><div class="f-chips">${chips}</div>`
+      + `<div class="f-stop${i > 0 && i <= reach ? " l-in" : ""}${i < reach ? " l-out" : ""}"><span class="f-node${on.length ? " on" : i <= reach ? " past" : ""}" title="${esc(name)}"></span>`
+      + (i < n - 1 && passed.length ? `<span class="f-pass" title="got past ${esc(name)}: ${passed.map(c => "#" + c.issue).join(" ")}">+${passed.length} →</span>` : "") + `</div>`
+      + `<span class="f-name${on.length || i <= reach ? " lit" : ""}">${esc(name)}</span><span class="f-note">${note}</span>`
+      + `</li>`;
+  }).join("");
+  return `<ol style="--n:${n}">${items}</ol>`;
+}
+
 function renderBoard() {
   const all = cardsData();
+  $("flow").hidden = VIEW === "errors" || !STATIONS.length;
+  if (!$("flow").hidden) $("flow").innerHTML = flow(all);
   const errs = all.filter(c => ERR_EXIT.has(c.exit) || c.stalled);
   $("nRun").textContent = all.filter(c => c.live).length || "";
   $("nErr").textContent = errs.length || "";
-  const list = VIEW === "errors" ? errs : all;
+  // the pipeline line stands for every run; only the clicked one gets its card (Stop, PR, reason)
+  const list = VIEW === "errors" ? errs : all.filter(c => String(c.issue) === PICK);
   $("boardTitle").textContent = VIEW === "errors" ? "Errors" : "Pipeline";
   $("boardNote").textContent = VIEW === "errors" ? "Runs that gave up, errored, were escalated, or stopped writing for 10 minutes."
-    : "One card per run. Arcs above the line are the times a result sent the run back to an earlier station.";
+    : "All runs on one line: who is at each station now, how many got past it (+N), and where a result sent runs back (↩ station ×N). Click a number to open that run.";
   $("grid").innerHTML = list.map(card).join("");
-  $("empty").hidden = list.length > 0;
+  $("empty").hidden = (VIEW === "errors" ? errs : all).length > 0;
   $("empty").textContent = VIEW === "errors" ? "No failed runs." : "No runs yet.";
 }
 
@@ -598,6 +662,7 @@ $("grid").addEventListener("click", async e => {
   pick(art.dataset.n === PICK ? "" : art.dataset.n);
 });
 $("dclose").addEventListener("click", () => pick(""));
+$("flow").addEventListener("click", e => { const b = e.target.closest("button[data-n]"); if (b) { pick(b.dataset.n); $("detail").scrollIntoView({ block: "start" }); } });
 $("filter").addEventListener("input", renderIssues);
 $("refresh").addEventListener("click", () => loadIssues(true));
 $("issueList").addEventListener("change", e => {
