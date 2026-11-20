@@ -361,8 +361,17 @@ the complete history; large installations should compact/split this state before
 
 ## Platforms
 
-Linux and macOS. The code uses process groups, `sh -c` and symlinks, so it does not build on
-Windows; use WSL.
+Linux, macOS and Windows. Platform differences are isolated in `filelock_unix.go` /
+`filelock_windows.go` (journal locking: `flock` vs `LockFileEx`) and `proc_unix.go` /
+`proc_windows.go` (process groups and group kill: `setpgid`/`kill(-pid)` vs
+`CREATE_NEW_PROCESS_GROUP`/`taskkill /T`/`CTRL_BREAK_EVENT`). Windows caveats:
+
+- Check commands run via `sh -c`, so a `sh` (e.g. Git for Windows) must be on `PATH`.
+- Group kill uses `taskkill /T`; if that misses a descendant, the one-second pipe
+  timeout ends the session anyway.
+- `SM_LINKS` symlinks need Windows Developer Mode (or an elevated process).
+- Tests that fake providers with `#!/bin/sh` scripts self-skip on Windows; run the
+  full suite on Linux, macOS or WSL.
 
 ## Tests
 

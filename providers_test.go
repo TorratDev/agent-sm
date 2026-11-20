@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,10 @@ func useProfile(t *testing.T, p Profile) {
 
 func writeFile(t *testing.T, path, body string, mode os.FileMode) {
 	t.Helper()
+	// Fake provider/tracker binaries are sh scripts; Windows cannot execute them.
+	if runtime.GOOS == "windows" && strings.HasPrefix(body, "#!") {
+		t.Skipf("%s needs a Unix shell; run the suite on Linux, macOS or WSL", filepath.Base(path))
+	}
 	if err := os.WriteFile(path, []byte(body), mode); err != nil {
 		t.Fatal(err)
 	}

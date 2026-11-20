@@ -336,7 +336,7 @@ func (r *Runner) runOne(j *Job) {
 	cmd := exec.Command(r.self, wt, strconv.Itoa(j.Issue))
 	cmd.Env = childEnv(j, r.stats)
 	cmd.Stdout, cmd.Stderr = logf, logf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcessGroup(cmd)
 	r.mu.Lock()
 	if r.stopped[j] { // stopped while the worktree was being made
 		j.Exit = "stopped"
@@ -412,7 +412,7 @@ func (r *Runner) Stop() {
 	for _, j := range r.running {
 		r.stopped[j] = true
 		if cmd := r.cmds[j]; cmd != nil && cmd.Process != nil {
-			syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+			_ = killProcessGroup(cmd.Process.Pid, syscall.SIGTERM)
 		}
 	}
 	if r.idle != nil {

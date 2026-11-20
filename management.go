@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -335,11 +334,10 @@ func (m *manager) locked(ctx context.Context, f func() error) error {
 	}
 	defer lock.Close()
 	for {
-		err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
+		if err = lockFile(lock); err == nil {
 			break
 		}
-		if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
+		if !isLockHeld(err) {
 			return err
 		}
 		select {
@@ -348,7 +346,7 @@ func (m *manager) locked(ctx context.Context, f func() error) error {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer unlockFile(lock)
 	m.state = managementState{Scope: m.scope, Previews: map[string]*Preview{}, Items: map[string]*ManagedItem{}, Ops: map[string]*managementOp{}}
 	b, err := os.ReadFile(filepath.Join(m.dir, "state.json"))
 	if err == nil {
@@ -388,12 +386,7 @@ func (m *manager) save() error {
 	if err = os.Rename(f.Name(), filepath.Join(m.dir, "state.json")); err != nil {
 		return err
 	}
-	d, err := os.Open(m.dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
+	return fsyncDir(m.dir)
 }
 
 func (m *manager) op(ctx context.Context, id string, create bool, run func(bool) (any, error)) error {

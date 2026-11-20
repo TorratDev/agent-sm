@@ -50,8 +50,8 @@ func agent(c *Ctx, state State, prompt string, out any) (result Out) {
 func process(ctx context.Context, dir, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	setProcessGroup(cmd)
+	cmd.Cancel = func() error { return killProcessGroup(cmd.Process.Pid, syscall.SIGKILL) }
 	// A descendant holding a pipe must not keep an otherwise exited session alive.
 	cmd.WaitDelay = time.Second
 	return cmd
