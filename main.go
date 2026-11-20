@@ -1,7 +1,7 @@
 // agent-sm: a state machine drives the work; agents only run inside single steps.
 // The code decides what happens next from each step's returned Out, never the agent.
 //
-// usage: agent-sm <repo-dir> <issue-number>
+// usage: agent-sm <repo-dir> <issue-number> [--from <state>]
 package main
 
 import (
@@ -309,7 +309,7 @@ type Ctx struct {
 var runCtx = context.Background()
 
 func logEvent(kv map[string]any) {
-	kv["t"] = time.Now().Format(time.RFC3339) // the page orders events against status.json with it
+	kv["t"] = time.Now().UTC().Format(time.RFC3339) // the board shows how long a run took
 	b, _ := json.Marshal(kv)
 	fmt.Fprintln(os.Stderr, string(b))
 	if eventsPath != "" { // the live view reads this file
@@ -1021,9 +1021,50 @@ func contains(l []Out, o Out) bool {
 	return false
 }
 
-func run(c *Ctx) Exit {
+// stateNames lists every station name in state order.
+func stateNames() []string {
+	names := make([]string, numStates)
+	for s := State(0); s < numStates; s++ {
+		names[s] = s.String()
+	}
+	return names
+}
+
+// saveCtx writes the run's data after every step, so a later run can pick it up with --from
+// (and an operator can correct it by hand first).
+func saveCtx(c *Ctx) {
+	b, _ := json.MarshalIndent(c, "", "  ")
+	os.WriteFile(filepath.Join(c.Scratch, "ctx.json"), b, 0o644)
+}
+
+// resume loads the Ctx an earlier run of this issue saved and returns the state to start from.
+// Paths, publish level and Ghidra copy come from this invocation, not the file.
+// shortcut: retry limits start again and the working tree is trusted as it is; add a tree check
+// if resumed runs start from the wrong files.
+func resume(c *Ctx, from string) (State, error) {
+	b, err := os.ReadFile(filepath.Join(c.Scratch, "ctx.json"))
+	if err != nil {
+		return 0, fmt.Errorf("nothing to resume: %v", err)
+	}
+	saved := *c
+	if err := json.Unmarshal(b, &saved); err != nil {
+		return 0, fmt.Errorf("ctx.json: %v", err)
+	}
+	if saved.Issue != c.Issue {
+		return 0, fmt.Errorf("ctx.json is for issue %d, not %d", saved.Issue, c.Issue)
+	}
+	saved.Repo, saved.Scratch, saved.Level, saved.Ghidra = c.Repo, c.Scratch, c.Level, c.Ghidra
+	*c = saved
+	for s := Plan; s < numStates; s++ { // prepare is a normal run
+		if s.String() == from {
+			return s, nil
+		}
+	}
+	return 0, fmt.Errorf("--from must be one of: %s", strings.Join(stateNames()[Plan:], ", "))
+}
+
+func run(c *Ctx, s State) Exit {
 	var visits [numStates]int
-	s := Prepare
 	for {
 		if runCtx.Err() != nil {
 			return Stopped
@@ -1036,9 +1077,7 @@ func run(c *Ctx) Exit {
 		visits[s]++
 		c.Rounds = visits[Execute]
 		o := steps[s].Run(c)
-		if runCtx.Err() != nil { // a stopped step's result means nothing
-			return Stopped
-		}
+		saveCtx(c)
 		if !contains(steps[s].Outs, o) {
 			panic(fmt.Sprintf("step %v returned undeclared out %v", s, o))
 		}
@@ -1204,8 +1243,12 @@ func main() {
 		fmt.Println(allowJSON(b))
 		return
 	}
+	from := "" // agent-sm <repo-dir> <issue-number> --from <state>: resume from the saved ctx.json
+	if len(os.Args) == 5 && os.Args[3] == "--from" {
+		from, os.Args = os.Args[4], os.Args[:3]
+	}
 	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: agent-sm [--config FILE] <repo-dir> <issue-number> | agent-sm stats|allow [file] | agent-sm [--config FILE] serve [--repo DIR] [issue] [addr] | agent-sm --config FILE reconcile <repo-dir> <issue-number> (see README.md)")
+		fmt.Fprintln(os.Stderr, "usage: agent-sm <repo-dir> <issue-number> [--from <state>] | agent-sm stats|allow [file] | agent-sm serve [--repo DIR] [issue] [addr]  (SM_PUBLISH=pr|merge to push, open PRs, merge)")
 		os.Exit(2)
 	}
 	n, err := strconv.Atoi(os.Args[2])
@@ -1236,11 +1279,26 @@ func main() {
 	eventsPath = os.Getenv("SM_EVENTS")
 	if eventsPath == "" {
 		eventsPath = filepath.Join(c.Scratch, "events.jsonl")
-		// A new run starts a new event log; the earlier attempt's log is kept beside it.
-		os.Rename(eventsPath, strings.TrimSuffix(eventsPath, ".jsonl")+"-"+time.Now().Format("20060102-150405")+".jsonl")
+		if from == "" {
+			os.Remove(eventsPath) // a new run starts a new event log; a resumed one adds to it
+		}
 	}
-	// SIGINT or SIGTERM (the page's Stop) ends the current step; the cleanup and exit event below still run.
-	exit := run(c)
+	start := Prepare
+	if from != "" {
+		if start, err = resume(c, from); err == nil {
+			// prepare is skipped, so its branch must already be checked out
+			branch := "sm/issue-" + strconv.Itoa(n)
+			if cur, _ := sh(c.Repo, "git", "rev-parse", "--abbrev-ref", "HEAD"); strings.TrimSpace(cur) != branch {
+				err = fmt.Errorf("%s is not on branch %s", c.Repo, branch)
+			}
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		logEvent(map[string]any{"event": "resume", "from": from})
+	}
+	exit := run(c, start)
 	followUp(c, exit)
 	if settings.Management.Mode == "service" && exit != Ready {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

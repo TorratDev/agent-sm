@@ -1026,7 +1026,7 @@ func TestCheckCommandsAndReports(t *testing.T) {
 
 func TestUnknownUsageStopsRun(t *testing.T) {
 	fake(t, map[State]func(*Ctx) Out{Plan: func(c *Ctx) Out { c.CostUnknown++; return Direct }})
-	if exit := run(&Ctx{RunBudget: 20}); exit != GaveUp {
+	if exit := run(&Ctx{RunBudget: 20}, Prepare); exit != GaveUp {
 		t.Fatalf("unknown usage continued: %v", exit)
 	}
 }
