@@ -188,6 +188,7 @@
         <label>Budget per step $ <input type="number" id="budget" value="2" min="0.5" step="0.5"></label>
         <button class="btn primary" id="runBtn" disabled>Run selected</button>
       </div>
+      <div id="qstate"></div>
       <div id="deniedBox" hidden>
         <div class="head"><h3>Denied commands</h3><span class="count">The allow list refused these. Add them to the state's allow list or change its prompt.</span></div>
         <div class="panel" style="padding:14px 16px" id="denied"></div>
@@ -371,23 +372,10 @@ async function post(path, body) {
   return r.json();
 }
 
-// Model IDs belong to the selected CLI's catalog, not a hardcoded web catalog.
-function saved() { try { return JSON.parse(localStorage.getItem("sm-models-" + QUEUE.provider)) || {}; } catch { return {}; } }
-function renderModels(defaults, options) {
-  if ($("models").children.length || !defaults) return; // built once: rebuilding would reset an open picker
-  const mine = saved(), choices = options || [];
-  $("models").innerHTML = Object.keys(defaults).map(state => {
-    const cur = mine[state] || defaults[state], list = "model-options-" + state;
-    return `<label>${state} <input class="field" list="${list}" data-state="${state}" value="${esc(cur)}" aria-label="${state} model"><datalist id="${list}">${choices.map(m => `<option value="${esc(m)}"></option>`).join("")}</datalist></label>`;
-  }).join("");
-}
-const chosenModels = () => Object.fromEntries([...document.querySelectorAll("#models input")].map(s => [s.dataset.state, s.value]));
-$("models").addEventListener("change", () => { try { localStorage.setItem("sm-models-" + QUEUE.provider, JSON.stringify(chosenModels())); } catch {} });
-
 function renderQueue(q) {
   QUEUE = q;
   const parts = [];
-  if (q.running) parts.push(`running #${q.running.issue}` + (q.running.err ? " (" + q.running.err + ")" : ""));
+  for (const j of q.running || []) parts.push(`running #${j.issue}` + (j.err ? " (" + j.err + ")" : ""));
   if (q.queued && q.queued.length) parts.push("queued: " + q.queued.map(j => "#" + j.issue).join(", "));
   $("qstate").textContent = parts.join("  |  ") || "idle";
 }
@@ -418,7 +406,6 @@ $("runBtn").addEventListener("click", async () => {
 });
 
 async function tick() {
-  clearTimeout(TIMER);
   try {
     const [runs, q] = await Promise.all([fetch("/api/runs").then(r => r.json()), fetch("/api/queue").then(r => r.json())]);
     RUNS = runs.runs; STATIONS = runs.stations; LIMITS = runs.limits;
