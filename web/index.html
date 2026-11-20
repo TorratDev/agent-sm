@@ -134,9 +134,57 @@
   .toolbar input[type=number] { width: 72px; }
   input[type=checkbox] { padding: 0; accent-color: var(--live); }
   .toolbar .btn { margin-left: 0; }
-  .listbox { max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
-  .lbl { font-size: 11px; color: var(--mute); border: 1px solid var(--line); border-radius: 10px; padding: 0 6px; margin-left: 4px; }
-  #qstate { color: var(--mute); margin-top: 8px; font: 12px var(--mono); }
+  #qstate { color: var(--mute); margin-top: 4px; font: 12px var(--mono); }
+  .step { padding: 16px 18px; margin-bottom: 14px; }
+  .steph { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .steph h3 { margin: 0; }
+  .steph .note { margin-left: auto; }
+  .stepn { width: 22px; height: 22px; border-radius: 50%; background: var(--live-soft); color: var(--live); font-size: 12px; font-weight: 800; display: grid; place-items: center; }
+  .grow { flex: 1; min-width: 0; }
+
+  .repocur { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .repoicon { width: 30px; height: 30px; flex: none; border-radius: 7px; background: var(--live-soft); position: relative; }
+  .repoicon::before { content: ""; position: absolute; inset: 9px 7px 8px; border: 2px solid var(--live); border-radius: 2px 2px 3px 3px; }
+  .repoicon::after { content: ""; position: absolute; left: 7px; top: 6px; width: 8px; height: 4px; border: 2px solid var(--live); border-bottom: 0; border-radius: 2px 2px 0 0; }
+  .reponame { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .repopath { font: 12px var(--mono); color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .recent:empty { display: none; }
+  .rchip { font: 600 12px var(--sans); padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--ink); cursor: pointer; }
+  .rchip:hover { border-color: var(--live); color: var(--live); }
+  .rchip[aria-pressed=true] { background: var(--live-soft); border-color: var(--live); color: var(--live); }
+
+  #browser { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .crumbs { display: flex; gap: 6px; padding: 8px; background: var(--soft); border-bottom: 1px solid var(--line); }
+  .crumbs input { flex: 1; min-width: 0; font: 12.5px var(--mono); }
+  .btn.icon { padding: 5px 11px; font-size: 15px; line-height: 1; }
+  .dirfilter { display: block; width: calc(100% - 16px); margin: 8px; }
+  .dirs { list-style: none; margin: 0; padding: 0 0 4px; max-height: 260px; overflow: auto; }
+  .dirs button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 14px; border: 0; background: none; color: var(--ink); font: 14px var(--sans); text-align: left; cursor: pointer; }
+  .dirs button:hover, .dirs button:focus-visible { background: var(--live-soft); outline: none; }
+  .dirs button::before { content: ""; width: 16px; height: 13px; flex: none; background: var(--live); opacity: .55; clip-path: polygon(0 0, 42% 0, 54% 18%, 100% 18%, 100% 100%, 0 100%); }
+  .dirs button::after { content: "›"; margin-left: auto; color: var(--mute); font-size: 18px; line-height: 1; }
+  .dirs .none { padding: 10px 14px; color: var(--mute); font-size: 13px; }
+  .browsefoot { display: flex; align-items: center; gap: 10px; padding: 10px; border-top: 1px solid var(--line); background: var(--soft); }
+  .browsefoot .note { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .browsefoot .note.ok { color: var(--ok); font-weight: 600; } .browsefoot .note.bad { color: var(--bad); }
+
+  .issues { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .issues li + li { border-top: 1px solid var(--line); }
+  .issue { display: grid; grid-template-columns: auto auto 1fr; gap: 4px 12px; align-items: start; padding: 10px 14px; cursor: pointer; }
+  .issue:hover { background: var(--soft); }
+  .issue.on { background: var(--live-soft); box-shadow: inset 3px 0 var(--live); }
+  .issue input { margin-top: 4px; width: 16px; height: 16px; }
+  .inum { font: 600 13px var(--mono); color: var(--mute); padding-top: 1px; }
+  .ititle { font-weight: 600; overflow-wrap: anywhere; }
+  .imeta { grid-column: 3; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .tag { font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 1px 9px 0; border: 1px solid transparent; }
+  .tag.lbl { background: color-mix(in srgb, var(--c) 18%, transparent); border-color: color-mix(in srgb, var(--c) 45%, transparent); color: color-mix(in srgb, var(--c) 60%, var(--ink)); }
+  .tag.subs { background: var(--soft); color: var(--mute); }
+  .tag.blk { background: var(--warn-soft); color: var(--warn); }
+  .issues .none { padding: 28px; text-align: center; color: var(--mute); }
+  label.check { display: inline-flex; gap: 6px; align-items: center; }
+  .runbar .go { margin-left: auto; padding: 8px 18px; }
 
   @media (max-width: 560px) {
     .top > div, main { padding-left: 16px; padding-right: 16px; }
@@ -154,7 +202,7 @@
   <nav role="tablist">
     <button class="tab" role="tab" data-view="pipeline" aria-selected="true">Pipeline <span class="badge" id="nRun"></span></button>
     <button class="tab" role="tab" data-view="errors" aria-selected="false">Errors <span class="badge bad" id="nErr"></span></button>
-    <button class="tab" role="tab" data-view="start" aria-selected="false" id="startTab" hidden>Start runs</button>
+    <button class="tab" role="tab" data-view="start" aria-selected="false" id="startTab">Start runs</button>
   </nav>
   <span class="repo" id="repo"></span>
 </div></header>
@@ -175,25 +223,53 @@
   </section>
 
   <section id="start" hidden>
-    <div class="head"><h2>Start runs</h2><span class="note">Runs go one at a time, each in its own worktree.</span></div>
-    <div class="panel">
+    <div class="head"><h2>Start runs</h2><span class="note">Pick a repository, tick the issues, run. Each run gets its own worktree.</span></div>
+
+    <div class="panel step">
+      <div class="steph"><span class="stepn">1</span><h3>Repository</h3></div>
+      <div class="repocur">
+        <span class="repoicon" aria-hidden="true"></span>
+        <div class="grow"><div class="reponame" id="repoName">none chosen</div><div class="repopath" id="repoPath"></div></div>
+        <button class="btn" id="repoChange" aria-expanded="false" aria-controls="browser">Change</button>
+      </div>
+      <div class="recent" id="recent"></div>
+      <div id="browser" hidden>
+        <div class="crumbs">
+          <button class="btn icon" id="up" aria-label="Parent folder" title="Parent folder">↑</button>
+          <input type="text" id="pathInput" aria-label="Folder path" spellcheck="false">
+          <button class="btn" id="go">Open</button>
+        </div>
+        <input type="text" id="dirFilter" class="dirfilter" placeholder="filter folders" aria-label="Filter folders">
+        <ul class="dirs" id="dirs" role="list"></ul>
+        <div class="browsefoot"><span id="browseNote" class="note"></span><button class="btn primary" id="useRepo" disabled>Use this repository</button></div>
+      </div>
+    </div>
+
+    <div class="panel step">
+      <div class="steph"><span class="stepn">2</span><h3>Issues</h3><span class="note" id="issueCount"></span></div>
       <div class="toolbar">
-        <input type="text" id="filter" placeholder="filter open issues by number, title or label" aria-label="Filter issues">
+        <input type="text" id="filter" placeholder="filter by number, title or label" aria-label="Filter issues">
+        <button class="btn" id="selAll">Select shown</button>
         <button class="btn" id="refresh">Refresh</button>
       </div>
-      <div class="listbox tablewrap"><table id="issueTable"><tbody></tbody></table></div>
-      <div class="toolbar" style="margin-top:8px">
+      <ul class="issues" id="issueList" role="list"></ul>
+    </div>
+
+    <div class="panel step runbar">
+      <div class="steph"><span class="stepn">3</span><h3>Run</h3><span class="note" id="selNote">nothing selected</span></div>
+      <div class="toolbar">
         <label>Publish <select id="publish"><option value="">local only (staged branch)</option><option value="pr">open a draft PR</option></select></label>
-        <label><input type="checkbox" id="audit"> audit mode</label>
+        <label class="check"><input type="checkbox" id="audit"> audit mode</label>
         <label>Budget per step $ <input type="number" id="budget" value="2" min="0.5" step="0.5"></label>
-        <button class="btn primary" id="runBtn" disabled>Run selected</button>
+        <button class="btn primary go" id="runBtn" disabled>Run selected</button>
       </div>
       <div id="qstate"></div>
-      <div id="deniedBox" hidden>
-        <div class="head"><h3>Denied commands</h3><span class="count">The allow list refused these. Add them to the state's allow list or change its prompt.</span></div>
-        <div class="panel" style="padding:14px 16px" id="denied"></div>
-      </div>
-    </section>
+    </div>
+
+    <div id="deniedBox" hidden>
+      <div class="head"><h3>Denied commands</h3><span class="count">The allow list refused these. Add them to the state's allow list or change its prompt.</span></div>
+      <div class="panel" style="padding:14px 16px" id="denied"></div>
+    </div>
   </section>
 </main>
 
@@ -201,7 +277,7 @@
 const TOKEN = "__TOKEN__";
 const BAD_OUT = new Set(["fail", "blocked", "invalid", "split", "escalate"]);
 const ERR_EXIT = new Set(["gave-up", "errored", "escalated"]);
-let STATIONS = [], LIMITS = {}, RUNS = [], QUEUE = {}, ISSUES = [], SEL = new Set(), CAN_RUN = false;
+let STATIONS = [], LIMITS = {}, RUNS = [], QUEUE = {}, ISSUES = [], SEL = new Set();
 let VIEW = "pipeline", PICK = location.hash.slice(1);
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -280,7 +356,7 @@ function diagram(c) {
 
 function card(c) {
   const running = QUEUE.running && String(QUEUE.running.issue) === String(c.issue);
-  const acts = (running && CAN_RUN ? `<button class="btn danger" data-act="stop">Stop</button>` : "")
+  const acts = (running && QUEUE.can_run ? `<button class="btn danger" data-act="stop">Stop</button>` : "")
     + (c.pr ? `<a class="btn primary" href="${esc(c.pr)}" target="_blank" rel="noopener">Open PR</a>` : "");
   return `<article class="card tone-${c.tone}${String(c.issue) === PICK ? " picked" : ""}" data-n="${esc(c.issue)}">
     <div class="c-top"><span class="c-n">#${esc(c.issue)}</span><span class="pill">${esc(c.status)}</span><span class="c-meta">${esc(c.meta)}</span></div>
@@ -352,18 +428,70 @@ function show(view) {
   renderBoard();
 }
 
-// starting runs (only when the server was started with --repo)
+// starting runs: the chosen repository is remembered in this browser; with none, the server's own is used
+const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+let REPO = store.get("sm-repo", ""), SHOWN = "", LIST = null;
+const withRepo = path => REPO ? path + (path.includes("?") ? "&" : "?") + "repo=" + encodeURIComponent(REPO) : path;
+const base = p => p.split(/[\\/]/).filter(Boolean).pop() || p;
+
+function renderRepo() {
+  $("repoName").textContent = SHOWN ? base(SHOWN) : "none chosen";
+  $("repoPath").textContent = SHOWN || "Choose a folder that is a git repository with a GitHub remote.";
+  $("repo").textContent = SHOWN;
+  $("recent").innerHTML = store.get("sm-recent", []).map(r =>
+    `<button class="rchip" data-repo="${esc(r)}" title="${esc(r)}" aria-pressed="${r === SHOWN}">${esc(base(r))}</button>`).join("");
+}
+function setRepo(path) {
+  REPO = path; store.set("sm-repo", path);
+  store.set("sm-recent", [path, ...store.get("sm-recent", []).filter(r => r !== path)].slice(0, 6));
+  SHOWN = ""; ISSUES = []; SEL.clear(); renderIssues();
+  $("issueList").innerHTML = `<li class="none">loading issues…</li>`;
+  toggleBrowser(false); tick();
+}
+function toggleBrowser(open) {
+  $("browser").hidden = !open; $("repoChange").setAttribute("aria-expanded", String(open));
+  $("repoChange").textContent = open ? "Cancel" : "Change";
+  if (open) { $("dirFilter").value = ""; browse(SHOWN ? SHOWN.replace(/[\\/][^\\/]+[\\/]?$/, "") : ""); }
+}
+async function browse(path) {
+  $("browseNote").className = "note"; $("browseNote").textContent = "reading…";
+  try { LIST = await post("/api/folders", { path }); }
+  catch (err) { $("browseNote").className = "note bad"; $("browseNote").textContent = err.message; return; }
+  $("pathInput").value = LIST.path;
+  $("useRepo").disabled = !LIST.repo;
+  $("browseNote").className = "note " + (LIST.repo ? "ok" : "");
+  $("browseNote").textContent = LIST.repo ? "Git repository: " + LIST.repo : "Not a git repository. Open a folder below.";
+  renderDirs();
+}
+function renderDirs() {
+  const q = $("dirFilter").value.toLowerCase();
+  const dirs = (LIST ? LIST.directories : []).filter(d => q ? d.name.toLowerCase().includes(q) : !d.name.startsWith("."));
+  $("dirs").innerHTML = dirs.map(d => `<li><button data-path="${esc(d.path)}">${esc(d.name)}</button></li>`).join("")
+    || `<li class="none">no folders here${q ? " match" : ""}</li>`;
+}
+
 function renderIssues() {
   const q = $("filter").value.toLowerCase();
   const rows = ISSUES.filter(i => !q || ("#" + i.number + " " + i.title + " " + i.labels.map(l => l.name).join(" ")).toLowerCase().includes(q));
-  document.querySelector("#issueTable tbody").innerHTML = rows.map(i =>
-    `<tr><td><input type="checkbox" aria-label="Select #${i.number}" data-n="${i.number}" ${SEL.has(i.number) ? "checked" : ""}></td><td>#${i.number}</td><td>${esc(i.title)}${i.labels.map(l => `<span class="lbl">${esc(l.name)}</span>`).join("")}</td></tr>`).join("")
-    || `<tr><td class="sub">no matching open issues</td></tr>`;
-  $("runBtn").disabled = SEL.size === 0;
+  const hex = c => /^[0-9a-f]{6}$/i.test(c) ? "#" + c : "#8a93a6";
+  $("issueList").innerHTML = rows.map(i => `<li><label class="issue${SEL.has(i.number) ? " on" : ""}">
+    <input type="checkbox" data-n="${i.number}" ${SEL.has(i.number) ? "checked" : ""}><span class="inum">#${i.number}</span><span class="ititle">${esc(i.title)}</span>
+    ${i.labels.length || i.subs || i.blocked ? `<span class="imeta">${i.labels.map(l => `<span class="tag lbl" style="--c:${hex(l.color)}">${esc(l.name)}</span>`).join("")}${i.subs ? `<span class="tag subs">${i.subsDone}/${i.subs} sub-issues</span>` : ""}${i.blocked ? `<span class="tag blk">blocked by ${i.blocked}</span>` : ""}</span>` : ""}
+  </label></li>`).join("")
+    || `<li class="none">${!SHOWN ? "Choose a repository first." : ISSUES.length ? "No issue matches the filter." : "This repository has no open issues."}</li>`;
+  const shownAll = rows.length && rows.every(i => SEL.has(i.number));
+  $("selAll").textContent = shownAll ? "Clear shown" : "Select shown";
+  $("selAll").disabled = !rows.length;
+  $("issueCount").textContent = ISSUES.length ? ISSUES.length + " open" : "";
+  const sel = [...SEL].sort((a, b) => a - b);
+  $("selNote").textContent = sel.length ? sel.length + " selected: " + sel.map(n => "#" + n).join(", ") : "nothing selected";
+  $("runBtn").disabled = !sel.length;
+  $("runBtn").textContent = sel.length > 1 ? `Run ${sel.length} issues` : "Run selected";
 }
 async function loadIssues(refresh) {
-  const r = await fetch("/api/issues" + (refresh ? "?refresh=1" : ""));
-  if (!r.ok) { $("qstate").textContent = "cannot list issues: " + await r.text(); return; }
+  const r = await fetch(withRepo("/api/issues" + (refresh ? "?refresh=1" : "")));
+  if (!r.ok) { $("issueList").innerHTML = `<li class="none">Cannot list issues: ${esc(await r.text())}</li>`; return; }
   ISSUES = await r.json(); renderIssues();
 }
 async function post(path, body) {
@@ -386,7 +514,7 @@ $("grid").addEventListener("click", async e => {
   if (!art || e.target.closest("a")) return;
   if (e.target.closest("[data-act=stop]")) {
     if (!confirm("Stop the running job and clear the queue?")) return;
-    try { renderQueue(await post("/api/stop")); renderBoard(); } catch (err) { alert("cannot stop: " + err.message); }
+    try { renderQueue(await post(withRepo("/api/stop"))); renderBoard(); } catch (err) { alert("cannot stop: " + err.message); }
     return;
   }
   pick(art.dataset.n === PICK ? "" : art.dataset.n);
@@ -394,26 +522,38 @@ $("grid").addEventListener("click", async e => {
 $("dclose").addEventListener("click", () => pick(""));
 $("filter").addEventListener("input", renderIssues);
 $("refresh").addEventListener("click", () => loadIssues(true));
-$("issueTable").addEventListener("change", e => {
+$("issueList").addEventListener("change", e => {
   const n = Number(e.target.dataset.n); if (!n) return;
   e.target.checked ? SEL.add(n) : SEL.delete(n); renderIssues();
 });
+$("selAll").addEventListener("click", () => {
+  const shown = [...document.querySelectorAll("#issueList input")].map(c => Number(c.dataset.n));
+  const all = shown.every(n => SEL.has(n));
+  shown.forEach(n => all ? SEL.delete(n) : SEL.add(n)); renderIssues();
+});
+$("repoChange").addEventListener("click", () => toggleBrowser($("browser").hidden));
+$("recent").addEventListener("click", e => { const b = e.target.closest("[data-repo]"); if (b) setRepo(b.dataset.repo); });
+$("dirs").addEventListener("click", e => { const b = e.target.closest("[data-path]"); if (b) { $("dirFilter").value = ""; browse(b.dataset.path); } });
+$("dirFilter").addEventListener("input", renderDirs);
+$("up").addEventListener("click", () => LIST && browse(LIST.parent));
+$("go").addEventListener("click", () => browse($("pathInput").value.trim()));
+$("pathInput").addEventListener("keydown", e => { if (e.key === "Enter") browse($("pathInput").value.trim()); });
+$("useRepo").addEventListener("click", () => LIST && LIST.repo && setRepo(LIST.repo));
 $("runBtn").addEventListener("click", async () => {
   const issues = [...SEL].sort((a, b) => a - b), publish = $("publish").value;
-  if (!confirm("Run " + issues.map(n => "#" + n).join(", ") + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?")) return;
-  try { renderQueue(await post("/api/run", { issues, publish, audit: $("audit").checked, budget: $("budget").value })); SEL.clear(); renderIssues(); show("pipeline"); }
+  if (!confirm("Run " + issues.map(n => "#" + n).join(", ") + " in " + base(SHOWN) + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?")) return;
+  try { renderQueue(await post("/api/run", { issues, repo: REPO || undefined, publish, audit: $("audit").checked, budget: $("budget").value })); SEL.clear(); renderIssues(); show("pipeline"); }
   catch (err) { $("qstate").textContent = "cannot start: " + err.message; }
 });
 
 async function tick() {
   try {
-    const [runs, q] = await Promise.all([fetch("/api/runs").then(r => r.json()), fetch("/api/queue").then(r => r.json())]);
+    const [runs, q] = await Promise.all([fetch("/api/runs").then(r => r.json()),
+      fetch(withRepo("/api/queue")).then(async r => r.ok ? r.json() : { error: await r.text() })]);
     RUNS = runs.runs; STATIONS = runs.stations; LIMITS = runs.limits;
-    if (q.can_run) {
-      renderQueue(q);
-      $("repo").textContent = q.repo || "";
-      if (!CAN_RUN) { CAN_RUN = true; $("startTab").hidden = false; loadIssues(false); }
-    }
+    if (q.error) $("qstate").textContent = "cannot use " + REPO + ": " + q.error;
+    else if (q.can_run) renderQueue(q);
+    if ((q.repo || "") !== SHOWN) { SHOWN = q.repo || ""; renderRepo(); if (SHOWN) loadIssues(false); else { renderIssues(); if (!LIST) toggleBrowser(true); } }
     renderBoard();
     $("detail").hidden = !PICK;
     if (PICK) renderDetail(await fetch("/api/state?issue=" + encodeURIComponent(PICK)).then(r => r.json()));
