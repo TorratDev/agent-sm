@@ -2,7 +2,7 @@
   "provider": "copilot",
   "checks": [
     "dotnet build .",
-    "dotnet test"
+    "dotnet test --logger trx --results-directory \"$SM_CHECK_RESULTS/unit\""
   ],
   "required_test_reports": ["unit/*.trx"],
   "commands": {

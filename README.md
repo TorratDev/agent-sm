@@ -46,16 +46,16 @@ The repo's working tree must be clean; the run creates an available `sm/issue-<n
 app, plus the target project's build/test tools. Checks must be configured; there is no
 implicit Cargo default. `stats` and `allow` do not require a project profile.
 
-With no arguments or config, `go run .` starts the web UI in the current Git repo. It detects Go
-projects and the bundled Inventory .NET sample, and prefers the installed Copilot CLI, then Claude, then OpenCode.
+With no arguments or config, `go run .` starts the web UI in the current Git repo. It detects the
+language of each selected repo (Go from `go.mod`, Rust from `Cargo.toml`, .NET from a root `*.sln`
+or `*.slnx`) and runs that language's checks, and prefers the installed Copilot CLI, then Claude, then OpenCode.
 Use **Browse folders** to navigate local folders and select a Git working tree, or enter its path
 manually. The picker validates Git before enabling selection and resolves subfolders to their
 repository root; linked worktrees are supported too. Non-Git folders and unreadable/missing paths
 show an error, and nothing is initialized or uploaded. Folders belong to the computer running
 agent-sm (the same PC for a local launch). Unknown languages
 use a basic `git diff --check`; configure real build/test checks for meaningful verification.
-You can override the detected language profile and agent in the page. The .NET example targets a
-specific sample solution and is not universal. The page is loopback-only and token-protected, but
+You can override the detected language profile and agent in the page. The page is loopback-only and token-protected, but
 choosing a repo gives the agent access to work in that repo, so only select repositories you trust.
 
 There is no resume: a run always starts at `prepare`. A stopped or failed run leaves its branch
@@ -101,7 +101,7 @@ rather than interpreting credits as dollars or vice versa.
 ## Profiles and tools
 
 Pass an explicit operator-owned JSON file; configuration is never auto-discovered in a target
-branch. See [Go](examples/go.json), [.NET unit testing](examples/dotnet.json), and
+branch. See [Go](examples/go.json), [.NET unit testing](examples/dotnet.json), [Rust](examples/rust.json), and
 [legacy Claude/Rust/Ghidra](examples/claude-legacy.json). Copy and adapt the examples outside
 the target checkout. Precedence is defaults, profile, environment, then validated web overrides.
 Relative `notes_dir` and `add_dirs` paths resolve against the profile's directory. Queued runs

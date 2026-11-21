@@ -376,10 +376,40 @@ func TestAutoLanguageProfile(t *testing.T) {
 	}
 
 	dotnetDir := t.TempDir()
-	writeFile(t, filepath.Join(dotnetDir, "Inventory.ChannelX.slnx"), "", 0o644)
+	writeFile(t, filepath.Join(dotnetDir, "Shop.sln"), "", 0o644)
 	dotnet, err := autoLanguageProfile(dotnetDir)
 	if err != nil || len(dotnet.TestReports) != 1 {
 		t.Fatalf(".NET auto-detection: %+v %v", dotnet, err)
+	}
+
+	rustDir := t.TempDir()
+	writeFile(t, filepath.Join(rustDir, "Cargo.toml"), "[workspace]\n", 0o644)
+	rust, err := autoLanguageProfile(rustDir)
+	if err != nil || len(rust.Checks) != 4 || !strings.HasPrefix(rust.Checks[0], "cargo fmt") || rust.Format != "cargo fmt --all" || len(rust.Commands["execute"]) == 0 {
+		t.Fatalf("Rust auto-detection: %+v %v", rust, err)
+	}
+}
+
+func TestQueuedProfileAutoDetectsRepo(t *testing.T) {
+	p := defaultProfile("claude")
+	p.Checks = []string{"go vet ./..."} // what a no-config `serve` started in a Go checkout gets
+	useProfile(t, p)
+	rustDir := t.TempDir()
+	writeFile(t, filepath.Join(rustDir, "Cargo.toml"), "[workspace]\n", 0o644)
+
+	got, err := queuedProfile(runRequest{Repo: rustDir})
+	if err != nil || got.Checks[0] != "go vet ./..." {
+		t.Fatalf("a configured server must keep its checks: %+v %v", got.Checks, err)
+	}
+	autoSettings = true
+	t.Cleanup(func() { autoSettings = false })
+	got, err = queuedProfile(runRequest{Repo: rustDir})
+	if err != nil || !strings.HasPrefix(got.Checks[0], "cargo fmt") {
+		t.Fatalf("a no-config server must detect the queued repo: %+v %v", got.Checks, err)
+	}
+	got, err = queuedProfile(runRequest{Repo: rustDir, Language: "server"})
+	if err != nil || got.Checks[0] != "go vet ./..." {
+		t.Fatalf("language=server must keep the server checks: %+v %v", got.Checks, err)
 	}
 }
 

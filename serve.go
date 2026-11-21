@@ -23,11 +23,14 @@ import (
 //go:embed web/index.html
 var indexHTML []byte
 
-//go:embed examples/go.json examples/dotnet.json
+//go:embed examples/go.json examples/dotnet.json examples/rust.json
 var languageProfileFiles embed.FS
 
+// autoSettings is true when `serve` started without a config, so each queued repo gets its own language profile.
+var autoSettings bool
+
 func languageProfile(name string) (Profile, error) {
-	path := map[string]string{"go": "examples/go.json", "dotnet": "examples/dotnet.json"}[name]
+	path := map[string]string{"go": "examples/go.json", "dotnet": "examples/dotnet.json", "rust": "examples/rust.json"}[name]
 	if path == "" {
 		return Profile{}, fmt.Errorf("unknown language profile %q", name)
 	}
@@ -80,8 +83,13 @@ func autoLanguageProfile(repo string) (Profile, error) {
 	if _, err := os.Stat(filepath.Join(canonical, "go.mod")); err == nil {
 		return languageProfile("go")
 	}
-	if _, err := os.Stat(filepath.Join(canonical, "Inventory.ChannelX.slnx")); err == nil {
-		return languageProfile("dotnet")
+	if _, err := os.Stat(filepath.Join(canonical, "Cargo.toml")); err == nil {
+		return languageProfile("rust")
+	}
+	for _, pattern := range []string{"*.sln", "*.slnx"} {
+		if m, _ := filepath.Glob(filepath.Join(canonical, pattern)); len(m) > 0 {
+			return languageProfile("dotnet")
+		}
 	}
 	p := defaultProfile("copilot")
 	p.Checks = []string{"git diff --check"}
@@ -692,6 +700,9 @@ func queueSnapshot(r *Runner, p Profile) map[string]any {
 
 func queuedProfile(req runRequest) (Profile, error) {
 	p := settings
+	if req.Language == "" && autoSettings {
+		req.Language = "auto" // the server's own profile was detected from its cwd, not from this repo
+	}
 	if req.Language == "auto" || (req.Language != "" && req.Language != "server") {
 		var language Profile
 		var err error

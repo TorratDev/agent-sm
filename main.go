@@ -1137,7 +1137,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}
-		settings = p
+		settings, autoSettings = p, true
 	} else {
 		p, err := loadProfile(configPath)
 		if err != nil {
