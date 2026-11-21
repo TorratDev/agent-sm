@@ -205,8 +205,8 @@ Credentials are not forwarded to worker agents.
 Reconciliation is **read-only status verification**: it verifies the explicit counterpart and
 exact GitHub backlink, closing-issue reference, Jira PR-title token, and intended PR base.
 Assignment establishes the implementation phase; only an open non-draft closing PR
-establishes review, and its verified merge establishes delivery. Partial/Refs PRs do not advance
-delivery, and child completion never advances a parent. Conflicts are reported, not overwritten.
+establishes review, and its verified merge establishes delivery. Every PR the program opens
+says "Close #N"; drafts do not advance delivery, and child completion never advances a parent. Conflicts are reported, not overwritten.
 Assignee selection, Start date initialization, transitions, and failed-Action recovery stay with
 the existing Action/agent integration; status alignment is not a claim that those are verified.
 
@@ -335,7 +335,7 @@ While `serve` runs, the service watches registered PRs and resumes managed track
 restart. A one-shot command runs no daemon and cannot observe later review/merge events;
 keep `serve` running or reconcile manually. This does not resume a stopped coding run.
 Lifecycle follows verified assignment, review-ready closing PR and merge evidence; drafts
-and partial/Refs PRs do not imply delivery, and completing a child never rolls up its parent.
+do not imply delivery, and completing a child never rolls up its parent.
 Start dates use a verified assignment event's UTC date and never overwrite an existing date.
 Missing events remain pending rather than substituting today's date. Stopping/failing a run
 pauses its assignment/date automation until a new implementation starts; existing PR monitoring

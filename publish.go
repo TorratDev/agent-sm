@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -18,10 +17,6 @@ const (
 	levelPR    = "pr"
 	levelMerge = "merge"
 )
-
-// A "Refs" PR must never put close/fix/resolve next to an issue number, even negated:
-// GitHub would close the issue on merge (prompts/original/executor.md, step 5).
-var closeWord = regexp.MustCompile(`(?i)\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b[^\n]{0,40}#\d+|#\d+[^\n]{0,40}\b(close[sd]?|fix(es|ed)?|resolve[sd]?)\b`)
 
 func attribution() (string, string) {
 	switch settings.Provider {
@@ -101,16 +96,7 @@ func publish(c *Ctx) Out {
 		return Fail
 	}
 
-	link, body := "Closes", c.Summary
-	if !c.ClosesIssue {
-		// Refs PR: fixed text only, so no free text can carry a closing word.
-		link, body = "Refs", "Covers only some points of the issue; the open items stay in the issue."
-	}
-	prBody := fmt.Sprintf("%s #%d\n\n%s\n\n%s", link, c.Issue, body, footer)
-	if link == "Refs" && (closeWord.MatchString(c.Title) || closeWord.MatchString(prBody)) {
-		logEvent(map[string]any{"event": "publish-error", "err": "closing word next to an issue number in a Refs PR", "title": c.Title})
-		return Fail
-	}
+	prBody := fmt.Sprintf("Close #%d\n\n%s\n\n%s", c.Issue, c.Summary, footer)
 	title := c.Title
 	if c.JiraKey != "" && !jiraTitleKey(title, c.JiraKey) {
 		title = c.JiraKey + " " + title
@@ -161,11 +147,6 @@ func publish(c *Ctx) Out {
 	gh(c, "pr", "merge", pr, "--squash", "--delete-branch") // local branch delete can fail in a worktree
 	if st, _ := gh(c, "pr", "view", pr, "--json", "state", "--jq", ".state"); st != "MERGED" {
 		return Fail
-	}
-	if !c.ClosesIssue { // a Refs merge must leave the issue open
-		if st, _ := gh(c, "issue", "view", n, "--json", "state", "--jq", ".state"); st == "CLOSED" {
-			gh(c, "issue", "reopen", n)
-		}
 	}
 	c.Merged = true
 	logEvent(map[string]any{"event": "merged", "pr": pr, "note": "the worktree is left in place: remove it with git worktree remove"})

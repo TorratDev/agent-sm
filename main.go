@@ -145,7 +145,7 @@ func init() { // not a composite literal at package level: the step functions re
 			Allow:  "Read,Grep,Glob," + shRead + ",Bash(git log:*),Bash(git grep:*),Bash(git status:*),Bash(gh issue view:*)"},
 		Execute: {Name: "execute", Run: execute, Outs: []Out{Ok, Blocked, Fail, Invalid, Timeout, OverBudget},
 			Role: "executor", Model: sonnet,
-			Schema: `{"type":"object","properties":{"status":{"enum":["done","partial","blocked"]},"summary":{"type":"string"},"closes_issue":{"type":"boolean"}},"required":["status","summary","closes_issue"],"additionalProperties":false}`,
+			Schema: `{"type":"object","properties":{"status":{"enum":["done","partial","blocked"]},"summary":{"type":"string"}},"required":["status","summary"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob,Edit,Write," + shRead + ",Bash(git diff:*),Bash(git status:*)",
 			Edit:   true},
 		Check: {Name: "check", Run: check, Outs: []Out{Pass, Fail}},
@@ -282,7 +282,6 @@ type Ctx struct {
 	Ghidra          string // ghidra project copy, or "none"
 	Level           string // SM_PUBLISH: "", "pr" or "merge"
 	Verdict         string // reviewer reasons
-	ClosesIssue     bool   // executor: every Done-when item met
 	Rounds          int    // execute runs so far
 	Objective       string // plan -> everyone
 	Points          []string
@@ -883,9 +882,8 @@ func execute(c *Ctx) Out {
 		return Fail // the service, not the task, is stuck: a re-plan would not help
 	}
 	var r struct {
-		Status      string
-		Summary     string
-		ClosesIssue bool `json:"closes_issue"`
+		Status  string
+		Summary string
 	}
 	extra := taskText(c)
 	if c.Evidence != "" {
@@ -897,11 +895,11 @@ func execute(c *Ctx) Out {
 	if o := agent(c, Execute, dispatch(c, steps[Execute].Role, extra), &r); o != Ok {
 		return o
 	}
-	c.Summary, c.ClosesIssue = r.Summary, r.ClosesIssue && r.Status == "done"
+	c.Summary = r.Summary
 	if r.Status == "blocked" {
 		return Blocked
 	}
-	return Ok // done or partial: both go to check and review; partial never closes the issue
+	return Ok // done or partial: both go to check and review; the PR says "Close #N" either way
 }
 
 func runChecks(c *Ctx) bool {

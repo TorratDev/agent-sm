@@ -1191,7 +1191,7 @@ if [ -n "$session" ]; then
 fi
 case "$prompt" in
   *"You are the planner"*) echo '{"type":"assistant.message","data":{"content":"{\"status\":\"plan\",\"objective\":\"deliver file\",\"points\":[\"file exists\"],\"points_derived\":false,\"files\":[\"outcome.txt\"],\"verification\":\"default\",\"needs_investigation\":false,\"fits_one_pr\":true,\"units\":[]}"}}';;
-  *"You are the implementation"*) echo delivered > outcome.txt; echo '{"type":"assistant.message","data":{"content":"{\"status\":\"done\",\"summary\":\"delivered file\",\"closes_issue\":true}"}}';;
+  *"You are the implementation"*) echo delivered > outcome.txt; echo '{"type":"assistant.message","data":{"content":"{\"status\":\"done\",\"summary\":\"delivered file\"}"}}';;
   *"You independently review"*) echo '{"type":"assistant.message","data":{"content":"{\"verdict\":\"PASS\",\"reasons\":[\"file verified\"]}"}}';;
   *) exit 1;;
 esac

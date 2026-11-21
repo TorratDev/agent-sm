@@ -23,8 +23,7 @@ Work:
 
 Your result is the typed output, not a message to anyone:
 - status "done": the work is complete; `summary` has what you changed and the verification result.
-- `closes_issue`: true only when every "Done when" item of the issue is met with its evidence; otherwise false (the PR then says "Refs", and the issue stays open). Never write close, closes, fix, fixes, resolve or resolves next to an issue number in `summary`.
-- status "partial": part of the work is done and honest, and the rest needs something you cannot do here (for example a runtime probe that is not available). Do the part you can, tag the rest [hypothesis] in the notes, and say plainly in `summary` which "Done when" items are open. A partial result still goes to checks and review; it never closes the issue.
+- status "partial": part of the work is done and honest, and the rest needs something you cannot do here (for example a runtime probe that is not available). Do the part you can, tag the rest [hypothesis] in the notes, and say plainly in `summary` which "Done when" items are open. A partial result still goes to checks and review, and its PR closes the issue on merge, so `summary` must list what is left.
 - status "blocked": nothing useful can be delivered: something is missing, failing, or too large for one PR; `summary` says what.
 
 Do not work beyond the dispatch.

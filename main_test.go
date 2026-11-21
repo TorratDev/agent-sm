@@ -74,19 +74,6 @@ func TestReportFindsUnused(t *testing.T) {
 	}
 }
 
-func TestRefsGuard(t *testing.T) {
-	for _, bad := range []string{"does not close #5", "Fixes #12 partly", "#7 resolved here"} {
-		if !closeWord.MatchString(bad) {
-			t.Errorf("guard missed %q", bad)
-		}
-	}
-	for _, ok := range []string{"Refs #5", "Part of #5: docs", "rename the fix-it helper"} {
-		if closeWord.MatchString(ok) {
-			t.Errorf("guard flagged %q", ok)
-		}
-	}
-}
-
 func TestCmdWords(t *testing.T) {
 	got := strings.Join(cmdWords("cd /x; rtk grep -rn foo . | head -3 && git log --oneline; for a in 1; do ls $a; done"), ",")
 	if want := "cd,rtk grep,head,git log,ls"; got != want {
