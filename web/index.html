@@ -516,7 +516,7 @@ const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? 
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 let REPO = store.get("sm-repo", ""), SHOWN = "", LIST = null;
 const withRepo = path => REPO ? path + (path.includes("?") ? "&" : "?") + "repo=" + encodeURIComponent(REPO) : path;
-let AGENT = store.get("sm-agent", ""); // empty: the server's own choice
+let AGENT = store.get("sm-agent", "claude"); // page default; empty means the server's own choice
 const withAgent = path => withRepo(AGENT ? path + "?provider=" + encodeURIComponent(AGENT) : path);
 const base = p => p.split(/[\\/]/).filter(Boolean).pop() || p;
 
@@ -586,11 +586,11 @@ async function post(path, body) {
 }
 
 function renderQueue(q) {
-  if (QUEUE.concurrency === undefined && q.concurrency) $("parallel").value = q.concurrency; // server value on first load only
   if (QUEUE.provider !== q.provider) { // each agent has its own budget unit, minimum and default
     const credits = q.usage_unit === "credits";
     $("budgetUnit").textContent = credits ? "(credits)" : "$";
-    Object.assign($("budget"), { value: q.session_limit, min: q.min_session_limit, step: credits ? "1" : "0.01" });
+    Object.assign($("budget"), { min: q.min_session_limit, step: credits ? "1" : "0.01" });
+    if (QUEUE.provider !== undefined) $("budget").value = q.session_limit; // a real agent switch resets the budget; the page default (10) holds on load
   }
   QUEUE = q; renderModels(q); renderAgents(q);
   const parts = [];
