@@ -22,6 +22,29 @@ var (
 	issueBranchRe = regexp.MustCompile(`^sm/issue-([1-9][0-9]*)(?:-[1-9][0-9]*)?$`)
 )
 
+// handledElsewhere says why this run has nothing left to do: the issue is closed, or another
+// attempt's PR for it is open. "" means go on. A gh error fails open: the guard only saves work.
+// A merged PR alone does not stop the run: a partial fix ("Refs #N") leaves the issue open on purpose.
+func handledElsewhere(c *Ctx) string {
+	n := strconv.Itoa(c.Issue)
+	if out, err := sh(c.Repo, "gh", "issue", "view", n, "--json", "state", "--jq", ".state"); err == nil && strings.TrimSpace(out) == "CLOSED" {
+		return "issue #" + n + " is closed"
+	}
+	// shortcut: scans the 100 newest open PRs only; fine while attempts of one issue are recent.
+	out, err := sh(c.Repo, "gh", "pr", "list", "--state", "open", "--limit", "100", "--json", "headRefName,url")
+	var prs []struct{ HeadRefName, URL string }
+	if err != nil || json.Unmarshal([]byte(out), &prs) != nil {
+		logEvent(map[string]any{"event": "handled-check", "err": "gh pr list failed", "out": tail(out, 300)})
+		return ""
+	}
+	for _, p := range prs {
+		if m := issueBranchRe.FindStringSubmatch(p.HeadRefName); m != nil && m[1] == n && p.HeadRefName != c.Branch {
+			return "another attempt's PR is open: " + p.URL
+		}
+	}
+	return ""
+}
+
 func issueBranchName(issue, attempt int) string {
 	name := "sm/issue-" + strconv.Itoa(issue)
 	if attempt > 0 {

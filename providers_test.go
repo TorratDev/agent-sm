@@ -1348,3 +1348,34 @@ func TestConcurrencyEnv(t *testing.T) {
 		t.Fatal("concurrency 17 accepted")
 	}
 }
+
+func TestHandledElsewhereStopsDuplicateRuns(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "gh"), `#!/bin/sh
+case "$1 $2" in
+  "issue view") echo "$SM_TEST_STATE";;
+  "pr list") printf '%s' "$SM_TEST_PRS";;
+  *) exit 1;;
+esac
+`, 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	for _, tc := range []struct{ state, prs, branch, want string }{
+		{"OPEN", `[]`, "", ""},
+		{"CLOSED", `[]`, "sm/issue-5-2", "issue #5 is closed"},
+		{"OPEN", `[{"headRefName":"sm/issue-5-1","url":"u1"}]`, "sm/issue-5-2", "another attempt's PR is open: u1"},
+		{"OPEN", `[{"headRefName":"sm/issue-5-2","url":"own"},{"headRefName":"sm/issue-50","url":"other"}]`, "sm/issue-5-2", ""},
+		{"OPEN", `not json`, "", ""}, // gh trouble fails open
+	} {
+		t.Setenv("SM_TEST_STATE", tc.state)
+		t.Setenv("SM_TEST_PRS", tc.prs)
+		if got := handledElsewhere(&Ctx{Repo: dir, Issue: 5, Branch: tc.branch, Scratch: t.TempDir()}); got != tc.want {
+			t.Errorf("%+v: got %q", tc, got)
+		}
+	}
+	var v [numStates]int
+	for _, s := range []State{Prepare, Publish} {
+		if n := next(s, Blocked, v); n.Exit != GaveUp {
+			t.Errorf("%v blocked must give up, got %+v", s, n)
+		}
+	}
+}

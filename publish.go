@@ -54,6 +54,10 @@ func publish(c *Ctx) Out {
 		logEvent(map[string]any{"event": "publish-error", "err": err.Error()})
 		return Fail
 	}
+	if why := handledElsewhere(c); why != "" {
+		logEvent(map[string]any{"event": "publish", "stop": why})
+		return Blocked
+	}
 	n := strconv.Itoa(c.Issue)
 	branch := c.Branch
 	if _, clean := sh(c.Repo, "git", "diff", "--cached", "--quiet"); clean == nil {

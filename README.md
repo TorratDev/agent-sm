@@ -9,6 +9,7 @@ table in `main.go`: its function, outcomes, role prompt, output schema, allow li
 
 Exits: `ready`, `gave-up`, `errored`, `split`, `escalated`, `stopped`. A blocked execute goes back to plan once
 (usually to widen the file list), with the executor's report; blocked again, the run gives up.
+Prepare and publish also give up when the issue is already closed or another attempt's PR for it is open.
 
 `prepare` runs the checks on the untouched base first. If they already fail, the run stops as `errored`
 before any agent starts, since no fix round of an issue that may not touch that code could pass. With a

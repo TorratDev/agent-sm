@@ -134,7 +134,7 @@ var steps [numStates]Step
 
 func init() { // not a composite literal at package level: the step functions refer back to steps
 	steps = [numStates]Step{
-		Prepare: {Name: "prepare", Run: prepare, Outs: []Out{Ok, Fail}},
+		Prepare: {Name: "prepare", Run: prepare, Outs: []Out{Ok, Blocked, Fail}},
 		Plan: {Name: "plan", Run: plan, Outs: []Out{Ok, Direct, Blocked, Split, Invalid, Timeout, OverBudget},
 			Role: "planner", Model: sonnet,
 			Schema: `{"type":"object","properties":{"status":{"enum":["plan","blocked"]},"objective":{"type":"string"},"points":{"type":"array","items":{"type":"string"}},"points_derived":{"type":"boolean"},"files":{"type":"array","items":{"type":"string"}},"verification":{"type":"string"},"needs_investigation":{"type":"boolean"},"fits_one_pr":{"type":"boolean"},"units":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"points":{"type":"array","items":{"type":"string"}}},"required":["id","title","points"],"additionalProperties":false}}},"required":["status","objective","points","points_derived","files","verification","needs_investigation","fits_one_pr","units"],"additionalProperties":false}`,
@@ -153,7 +153,7 @@ func init() { // not a composite literal at package level: the step functions re
 			Role: "reviewer", Model: opus,
 			Schema: `{"type":"object","properties":{"verdict":{"enum":["PASS","REVISE","SPLIT","ESCALATE"]},"reasons":{"type":"array","items":{"type":"string"}}},"required":["verdict","reasons"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead + ",Bash(git diff:*),Bash(git log:*)"},
-		Publish: {Name: "publish", Run: publish, Outs: []Out{Ok, Fail}},
+		Publish: {Name: "publish", Run: publish, Outs: []Out{Ok, Blocked, Fail}},
 	}
 	var schema map[string]any
 	var proposal map[string]any
@@ -200,6 +200,8 @@ func next(s State, o Out, visits [numStates]int) Next {
 		switch o {
 		case Ok:
 			return goTo(Plan)
+		case Blocked: // handled elsewhere: closed, or another attempt's PR is open
+			return done(GaveUp)
 		case Fail:
 			return done(Errored)
 		}
@@ -259,6 +261,8 @@ func next(s State, o Out, visits [numStates]int) Next {
 		switch o {
 		case Ok:
 			return done(Ready)
+		case Blocked: // handled elsewhere while this run worked
+			return done(GaveUp)
 		case Fail:
 			return done(Errored)
 		}
@@ -692,6 +696,10 @@ func prepare(c *Ctx) Out {
 			logEvent(map[string]any{"event": "prepare", "err": "dependency still open", "issue": d})
 			return Fail
 		}
+	}
+	if why := handledElsewhere(c); why != "" {
+		logEvent(map[string]any{"event": "prepare", "stop": why})
+		return Blocked
 	}
 	if c.Branch == "" {
 		branch, _, err := nextIssueBranch(c.Repo, c.Issue, "")
