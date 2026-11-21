@@ -10,6 +10,12 @@ table in `main.go`: its function, outcomes, role prompt, output schema, allow li
 Exits: `ready`, `gave-up`, `errored`, `split`, `escalated`, `stopped`. A blocked execute goes back to plan once
 (usually to widen the file list), with the executor's report; blocked again, the run gives up.
 
+`prepare` runs the checks on the untouched base first. If they already fail, the run stops as `errored`
+before any agent starts, since no fix round of an issue that may not touch that code could pass. With a
+publish level (not in service mode), it also files one `bug` issue titled `Base <base> check failed: <command>`
+(or comments on the open one with that title) and links the blocked issue to it. That bug's body contains
+`agent-sm: fixes-base`, which skips the base check; add the line to any issue meant to repair the base.
+
 ## Usage
 
     go run .                                    # auto-configure and start the web UI

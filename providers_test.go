@@ -1069,6 +1069,61 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestPrepareStopsOnBrokenBaseAndFilesOneBug(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	if err := os.Mkdir(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"}, {"remote", "add", "origin", repo}} {
+		if out, err := sh(repo, "git", args...); err != nil {
+			t.Fatalf("%s %v", out, err)
+		}
+	}
+	calls := filepath.Join(dir, "gh-calls")
+	writeFile(t, filepath.Join(dir, "gh"), `#!/bin/sh
+echo "$*" >> "`+calls+`"
+case "$1 $2" in
+  "issue view") printf '%s\n' "{\"title\":\"docs task\",\"body\":\"$SM_TEST_BODY\",\"url\":\"u\"}";;
+  "api "*) echo '[]';;
+  "issue list") printf '%s' "$SM_TEST_EXISTING";;
+  "issue create") echo https://example/issues/9;;
+  "issue comment") ;;
+  "pr list") echo '[]';;
+  *) exit 1;;
+esac
+`, 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("SM_SCRATCH_ROOT", filepath.Join(dir, "scratch"))
+	p := defaultProfile("claude")
+	p.Base = "main"
+	p.Checks = []string{"echo E0034 duplicate; false"}
+	useProfile(t, p)
+	run := func(body, existing string) (Out, string) {
+		os.Remove(calls)
+		t.Setenv("SM_TEST_BODY", body)
+		t.Setenv("SM_TEST_EXISTING", existing)
+		testGit(t, repo, "checkout", "-q", "main")
+		sh(repo, "git", "branch", "-D", "sm/issue-5")
+		c := &Ctx{Repo: repo, Issue: 5, Level: levelPR, Scratch: t.TempDir()}
+		o := prepare(c)
+		b, _ := os.ReadFile(calls)
+		return o, string(b)
+	}
+	o, got := run("only docs", "")
+	if o != Fail || !strings.Contains(got, "issue create --title Base main check failed: echo E0034 duplicate; false") ||
+		!strings.Contains(got, "Blocks: #5") || !strings.Contains(got, "issue comment 5 --body Blocked") {
+		t.Fatalf("broken base: %v\n%s", o, got)
+	}
+	if o, got = run("only docs", "https://example/issues/9"); o != Fail || strings.Contains(got, "issue create") ||
+		!strings.Contains(got, "issue comment https://example/issues/9 --body Also blocks #5.") {
+		t.Fatalf("second blocked issue must reuse the bug: %v\n%s", o, got)
+	}
+	if o, got = run("fix it\\n"+fixesBaseMarker, ""); o != Ok || strings.Contains(got, "issue create") {
+		t.Fatalf("the bug's own run must skip the base check: %v\n%s", o, got)
+	}
+}
+
 func TestQueuedCLI(t *testing.T) {
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repo")
@@ -1130,7 +1185,7 @@ echo '{"type":"result","exitCode":0}'
 	t.Setenv("SM_TRANSCRIPTS", "false")
 	p := defaultProfile("copilot")
 	p.Base = "main"
-	p.Checks = []string{"test -f outcome.txt"}
+	p.Checks = []string{"test -f outcome.txt || git diff --quiet HEAD"} // passes on the untouched base too
 	p.Transcripts = true
 	useProfile(t, p)
 	self, err := os.Executable()

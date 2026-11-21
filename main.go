@@ -711,6 +711,18 @@ func prepare(c *Ctx) Out {
 		c.Branch = branch
 	}
 	logEvent(map[string]any{"event": "branch", "branch": c.Branch, "base": c.Base})
+	// A base that already fails the checks would make every fix round fail on errors the issue
+	// may not touch, so stop here and file one bug for it. The bug's own run skips this test.
+	if len(settings.Checks) > 0 && !strings.Contains(c.Body, fixesBaseMarker) {
+		if !runChecks(c) {
+			failed := c.Feedback
+			c.Feedback, c.CheckOut = "", ""
+			logEvent(map[string]any{"event": "prepare", "err": "base " + c.Base + " fails its checks before any change", "out": tail(failed, 2000)})
+			baseBug(c, failed)
+			return Fail
+		}
+		c.CheckOut = ""
+	}
 	if settings.Legacy {
 		c.Export = exportState()
 	}
