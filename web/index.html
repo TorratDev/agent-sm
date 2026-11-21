@@ -303,11 +303,11 @@
     <div class="panel step runbar">
       <div class="steph"><span class="stepn">3</span><h3>Run</h3><span class="note" id="selNote">nothing selected</span></div>
       <div class="toolbar">
-        <label>Publish <select id="publish"><option value="">local only (staged branch)</option><option value="pr">open a draft PR</option></select></label>
+        <label>Publish <select id="publish"><option value="pr">open a draft PR</option><option value="">local only (staged branch)</option></select></label>
         <label class="check"><input type="checkbox" id="audit"> audit mode</label>
         <label title="Which agent CLI runs the steps. The model lists below follow it.">Agent <select id="agent" aria-label="Agent"></select></label>
-        <label>Budget per step <span id="budgetUnit">$</span> <input type="number" id="budget" value="2" min="0.01" step="0.01"></label>
-        <label title="How many queued issues run at once, each in its own worktree. Applies to every queue on this server.">In parallel <input type="number" id="parallel" value="1" min="1" max="16" step="1" style="width:4.5em"></label>
+        <label>Budget per step <span id="budgetUnit">$</span> <input type="number" id="budget" value="10" min="0.01" step="0.01"></label>
+        <label title="How many queued issues run at once, each in its own worktree. Applies to every queue on this server.">In parallel <input type="number" id="parallel" value="2" min="1" max="16" step="1" style="width:4.5em"></label>
         <button class="btn primary go" id="runBtn" disabled>Run selected</button>
       </div>
       <div class="models" id="models" hidden>
