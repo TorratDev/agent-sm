@@ -7,6 +7,10 @@
     "cargo test --workspace",
     "cargo test --workspace --doc"
   ],
+  "base_checks": [
+    "cargo fmt --all -- --check",
+    "cargo clippy --workspace --all-targets -- -D warnings"
+  ],
   "commands": {
     "execute": ["cargo fmt", "cargo check", "cargo clippy", "cargo build", "cargo test"]
   }

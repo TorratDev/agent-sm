@@ -1122,6 +1122,25 @@ esac
 	if o, got = run("fix it\\n"+fixesBaseMarker, ""); o != Ok || strings.Contains(got, "issue create") {
 		t.Fatalf("the bug's own run must skip the base check: %v\n%s", o, got)
 	}
+	ran := filepath.Join(dir, "check-ran")
+	settings.Checks = []string{"echo x >> " + ran}
+	for i := 0; i < 2; i++ {
+		if o, got = run("only docs", ""); o != Ok {
+			t.Fatalf("passing base run %d: %v\n%s", i, o, got)
+		}
+	}
+	if b, _ := os.ReadFile(ran); string(b) != "x\n" {
+		t.Fatalf("a base tree that passed must not be checked again, check ran %q", b)
+	}
+	settings.Checks = []string{"false"} // the full list would fail; base_checks alone guards the base
+	settings.BaseChecks = []string{"echo y >> " + ran}
+	settings.TestReports = []string{"*.trx"}
+	if o, got = run("only docs", ""); o != Ok {
+		t.Fatalf("base_checks must replace checks on the base: %v\n%s", o, got)
+	}
+	if b, _ := os.ReadFile(ran); string(b) != "x\ny\n" {
+		t.Fatalf("base_checks did not run once: %q", b)
+	}
 }
 
 func TestQueuedCLI(t *testing.T) {

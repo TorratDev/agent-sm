@@ -18,6 +18,7 @@ type Profile struct {
 	Provider       string              `json:"provider"`
 	Models         map[string]string   `json:"models,omitempty"`
 	Checks         []string            `json:"checks"`
+	BaseChecks     []string            `json:"base_checks,omitempty"`           // what prepare runs on the untouched base; empty means checks
 	TestReports    []string            `json:"required_test_reports,omitempty"` // TRX globs under fresh SM_CHECK_RESULTS
 	Format         string              `json:"format,omitempty"`
 	SessionLimit   float64             `json:"session_limit"`
@@ -359,7 +360,7 @@ func (p Profile) validateFor(managementOnly bool) error {
 	if len(p.Checks) == 0 && !managementOnly {
 		return fmt.Errorf("configure at least one check with --config or SM_CHECKS")
 	}
-	for _, cmd := range p.Checks {
+	for _, cmd := range append(append([]string{}, p.Checks...), p.BaseChecks...) {
 		if strings.TrimSpace(cmd) == "" {
 			return fmt.Errorf("check commands must not be empty")
 		}

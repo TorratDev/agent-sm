@@ -8,7 +8,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -714,12 +716,18 @@ func prepare(c *Ctx) Out {
 	// A base that already fails the checks would make every fix round fail on errors the issue
 	// may not touch, so stop here and file one bug for it. The bug's own run skips this test.
 	if len(settings.Checks) > 0 && !strings.Contains(c.Body, fixesBaseMarker) {
-		if !runChecks(c) {
+		passed := basePassedFile(c.Repo)
+		if _, err := os.Stat(passed); passed != "" && err == nil {
+			logEvent(map[string]any{"event": "prepare", "base_check": "skipped, this tree already passed"})
+		} else if !checkList(c, baseChecks(), baseReports()) {
 			failed := c.Feedback
 			c.Feedback, c.CheckOut = "", ""
 			logEvent(map[string]any{"event": "prepare", "err": "base " + c.Base + " fails its checks before any change", "out": tail(failed, 2000)})
 			baseBug(c, failed)
 			return Fail
+		} else if passed != "" {
+			os.MkdirAll(filepath.Dir(passed), 0o755)
+			os.WriteFile(passed, nil, 0o644)
 		}
 		c.CheckOut = ""
 	}
@@ -727,6 +735,18 @@ func prepare(c *Ctx) Out {
 		c.Export = exportState()
 	}
 	return Ok
+}
+
+// basePassedFile names the marker of a base that passed the checks: one per tree content and check list,
+// so a new run on the same base skips the check. "" when the tree cannot be read.
+// shortcut: ignores toolchain and SM_LINKS changes; add them to the key if a passed base ever goes stale.
+func basePassedFile(repo string) string {
+	tree, err := sh(repo, "git", "rev-parse", "HEAD^{tree}")
+	if err != nil {
+		return ""
+	}
+	key := sha256.Sum256([]byte(strings.TrimSpace(tree) + "\n" + strings.Join(baseChecks(), "\n")))
+	return filepath.Join(scratchRoot(), "base-passed", hex.EncodeToString(key[:16]))
 }
 
 // exportState checks the Ghidra export's STAMP once, so no agent spends a turn on it.
@@ -885,7 +905,27 @@ func execute(c *Ctx) Out {
 }
 
 func runChecks(c *Ctx) bool {
-	if len(settings.Checks) == 0 {
+	return checkList(c, settings.Checks, settings.TestReports)
+}
+
+// baseChecks are the checks prepare runs on the untouched base: base_checks when set, else all checks.
+func baseChecks() []string {
+	if len(settings.BaseChecks) > 0 {
+		return settings.BaseChecks
+	}
+	return settings.Checks
+}
+
+// A subset may not write the required test reports, so only the full list demands them.
+func baseReports() []string {
+	if len(settings.BaseChecks) > 0 {
+		return nil
+	}
+	return settings.TestReports
+}
+
+func checkList(c *Ctx, checks, reports []string) bool {
+	if len(checks) == 0 {
 		c.Feedback = "no checks configured"
 		return false
 	}
@@ -895,7 +935,7 @@ func runChecks(c *Ctx) bool {
 		return false
 	}
 	c.CheckOut = ""
-	for _, cmd := range settings.Checks {
+	for _, cmd := range checks {
 		out, err := checkCommand(c.Repo, cmd, "SM_CHECK_RESULTS="+resultDir, "SM_SCRATCH="+c.Scratch)
 		if err != nil {
 			c.Feedback = "check failed: " + cmd + "\n" + tail(out, 4000)
@@ -903,7 +943,7 @@ func runChecks(c *Ctx) bool {
 		}
 		c.CheckOut += "$ " + cmd + "\n" + ends(out, 500, 1000) + "\n"
 	}
-	if err := verifyTestReports(resultDir, settings.TestReports); err != nil {
+	if err := verifyTestReports(resultDir, reports); err != nil {
 		c.Feedback = err.Error()
 		return false
 	}

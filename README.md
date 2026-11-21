@@ -15,6 +15,11 @@ before any agent starts, since no fix round of an issue that may not touch that 
 publish level (not in service mode), it also files one `bug` issue titled `Base <base> check failed: <command>`
 (or comments on the open one with that title) and links the blocked issue to it. That bug's body contains
 `agent-sm: fixes-base`, which skips the base check; add the line to any issue meant to repair the base.
+A profile's `base_checks` replaces the full list for this step; the Rust profile runs only `fmt` and `clippy`
+there, since `cargo test` on the base took about 7 minutes. A base that passed is remembered by its tree and check list under `$SM_SCRATCH_ROOT/base-passed/`, so later
+runs on the same base skip the check (delete that directory to force it). `serve` also gives each repository
+one `CARGO_TARGET_DIR` (`$SM_SCRATCH_ROOT/repos/<repo>/cargo-target`) unless it is already set, so a new
+worktree does not rebuild a Rust project from scratch.
 
 ## Usage
 
@@ -113,7 +118,8 @@ the target checkout. Precedence is defaults, profile, environment, then validate
 Relative `notes_dir` and `add_dirs` paths resolve against the profile's directory. Queued runs
 receive an immutable resolved snapshot, including models and limits.
 
-Supported fields are `provider`, `models` (state to CLI model ID), `checks`, `format`,
+Supported fields are `provider`, `models` (state to CLI model ID), `checks`, `base_checks` (what
+`prepare` runs on the untouched base; default `checks`), `format`,
 `required_test_reports`, `session_limit`, `run_limit`, `timeout_minutes`, `commands`,
 `notes_dir`, `add_dirs`, `base`, `jira`, `management`, `transcripts`, `concurrency`, and the Claude-specific `claude_allow`,
 `claude_extra_allow`, `audit`, and `legacy_rust_ghidra`. Unknown fields fail startup.

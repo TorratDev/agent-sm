@@ -279,6 +279,9 @@ func childEnv(j *Job, stats string) []string {
 	scratch := j.scratch()
 	env = append(env, "SM_RESOLVED_CONFIG="+string(b), "SM_WORKTREE_BASE="+j.Base, "SM_WORKTREE_BRANCH="+j.Branch,
 		"SM_SCRATCH="+scratch, "SM_EVENTS="+filepath.Join(scratch, "events.jsonl"))
+	if os.Getenv("CARGO_TARGET_DIR") == "" { // one build cache per repository, so a new worktree does not compile from scratch
+		env = append(env, "CARGO_TARGET_DIR="+filepath.Join(filepath.Dir(runScratch(j.Repo, 0)), "cargo-target"))
+	}
 	return env
 }
 
