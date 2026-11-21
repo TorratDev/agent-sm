@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -283,4 +284,22 @@ esac
 `, 0o755)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return repo
+}
+
+func TestWriteStatsRecordsTimeRepoAndSharedPath(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SM_STATS", "")
+	t.Setenv("SM_SCRATCH_ROOT", root)
+	writeStats(&Stats{Repo: "/src/app", Issue: 7})
+	b, err := os.ReadFile(filepath.Join(root, "stats.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st Stats
+	if err := json.Unmarshal(b, &st); err != nil || st.Repo != "/src/app" || st.Issue != 7 {
+		t.Fatalf("got %+v, %v", st, err)
+	}
+	if _, err := time.Parse(time.RFC3339, st.T); err != nil {
+		t.Fatalf("t = %q: %v", st.T, err)
+	}
 }

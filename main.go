@@ -340,8 +340,10 @@ func tail(s string, n int) string {
 }
 
 // Stats is one agent session's measurements, appended as a JSON line to SM_STATS
-// (default agent-sm-stats.jsonl) and echoed in the step log.
+// (default stats.jsonl under the run history) and echoed in the step log.
 type Stats struct {
+	T             string         `json:"t"`    // when the session ended, so history can be queried by time
+	Repo          string         `json:"repo"` // which repository the run was in; one stats file holds them all
 	Provider      string         `json:"provider,omitempty"`
 	UsageUnknown  bool           `json:"usage_unknown,omitempty"`
 	Credits       *float64       `json:"credits,omitempty"`
@@ -370,12 +372,19 @@ type Stats struct {
 	Result        string         `json:"result"` // the structured output, first 1500 bytes
 }
 
-func writeStats(st *Stats) {
-	path := os.Getenv("SM_STATS")
-	if path == "" {
-		path = "agent-sm-stats.jsonl"
+// statsFile is SM_STATS, or one stats file under the run history so every working directory shares it.
+func statsFile() string {
+	if p := os.Getenv("SM_STATS"); p != "" {
+		return p
 	}
+	return filepath.Join(scratchRoot(), "stats.jsonl")
+}
+
+func writeStats(st *Stats) {
+	st.T = time.Now().UTC().Format(time.RFC3339)
 	b, _ := json.Marshal(st)
+	path := statsFile()
+	os.MkdirAll(filepath.Dir(path), 0o755)
 	if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
 		f.Write(append(b, '\n'))
 		f.Close()
@@ -468,7 +477,7 @@ func claudeAgent(c *Ctx, state State, prompt string, out any, transcript *agentT
 		return Invalid
 	}
 
-	st := &Stats{Provider: "claude", Issue: c.Issue, State: state.String(), ToolCalls: map[string]int{}, BashCmds: map[string]int{}}
+	st := &Stats{Provider: "claude", Repo: c.Repo, Issue: c.Issue, State: state.String(), ToolCalls: map[string]int{}, BashCmds: map[string]int{}}
 	if state == Investigate && len(c.Units) > 0 {
 		st.Unit = c.Units[c.UnitIdx].ID
 	}
@@ -1114,7 +1123,7 @@ func main() {
 	os.Args = append(os.Args[:1], args...)
 	managementCommand = len(args) > 0 && (args[0] == "issues" || args[0] == "reconcile")
 	if len(os.Args) >= 2 && os.Args[1] == "stats" {
-		path := "agent-sm-stats.jsonl"
+		path := statsFile()
 		if len(os.Args) > 2 {
 			path = os.Args[2]
 		}
@@ -1231,7 +1240,7 @@ func main() {
 		os.Exit(1)
 	}
 	if len(os.Args) >= 2 && os.Args[1] == "allow" {
-		path := "agent-sm-stats.jsonl"
+		path := statsFile()
 		if len(os.Args) > 2 {
 			path = os.Args[2]
 		}

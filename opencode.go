@@ -103,7 +103,7 @@ func opencodeAttempt(c *Ctx, state State, prompt, model string, limit float64, o
 		return Invalid, ""
 	}
 
-	st := &Stats{Provider: "opencode", Issue: c.Issue, State: state.String(), Model: model, ToolCalls: map[string]int{}, BashCmds: map[string]int{}}
+	st := &Stats{Provider: "opencode", Repo: c.Repo, Issue: c.Issue, State: state.String(), Model: model, ToolCalls: map[string]int{}, BashCmds: map[string]int{}}
 	if state == Investigate && len(c.Units) > 0 {
 		st.Unit = c.Units[c.UnitIdx].ID
 	}

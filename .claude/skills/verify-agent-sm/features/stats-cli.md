@@ -11,7 +11,7 @@
 
 ## How to get to it (user POV)
 
-- Run `agent-sm stats` in the directory holding `agent-sm-stats.jsonl`, or pass a file.
+- Run `agent-sm stats` (it reads `$SM_STATS`, default `$SM_SCRATCH_ROOT/stats.jsonl`), or pass a file.
 - Run `agent-sm allow [file]` the same way.
 
 ## Driving it with verify.sh
@@ -29,7 +29,7 @@ Preconditions:
 
 ## Gotchas
 
-- Without a file argument both commands read `agent-sm-stats.jsonl` in the current directory, which in the repo root may be the user's real stats. Always pass the seeded file.
+- Without a file argument both commands read `$SM_STATS` or `$SM_SCRATCH_ROOT/stats.jsonl`, which may be the user's real stats. Always pass the seeded file.
 - With fewer than 10 sessions per state the report adds `note: only <n> sessions, unused is not proof yet (want 10+)`. That is expected for the seed.
 - The archived seed's Bash command names include fragments of shell text (`Bash(s/Runs:*)`). Assert the JSON shape, not a specific entry.
 - The binary is deleted by `$V stop`. Drive the CLI before stopping.

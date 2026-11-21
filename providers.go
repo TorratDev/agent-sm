@@ -157,7 +157,7 @@ func copilotAgent(c *Ctx, state State, prompt string, out any, transcript *agent
 		cmd.Stdout = io.MultiWriter(transcript.stdout, stdout)
 		cmd.Stderr = io.MultiWriter(transcript.stderr, stderr)
 	}
-	st := &Stats{Provider: "copilot", Issue: c.Issue, State: state.String(), UsageUnknown: true}
+	st := &Stats{Provider: "copilot", Repo: c.Repo, Issue: c.Issue, State: state.String(), UsageUnknown: true}
 	if state == Investigate && len(c.Units) > 0 {
 		st.Unit = c.Units[c.UnitIdx].ID
 	}

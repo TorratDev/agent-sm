@@ -407,11 +407,7 @@ func liveState(steps []runStep) (live string) {
 // token-protected, up to `concurrency` runs at once, each in its own worktree).
 func serve(issue, addr, repo string) error {
 	root := scratchRoot()
-	statsPath := os.Getenv("SM_STATS")
-	if statsPath == "" {
-		statsPath = "agent-sm-stats.jsonl"
-	}
-	statsPath, _ = filepath.Abs(statsPath)
+	statsPath, _ := filepath.Abs(statsFile())
 	tok := make([]byte, 16)
 	rand.Read(tok)
 	token := hex.EncodeToString(tok)
