@@ -27,4 +27,4 @@ Do not use a tool to message anyone or to post comments: your result is the type
 - `handoff`: two to five lines for the units that run after yours: where you left files in the scratch directory (and how to run them), what you learned that they must not rediscover, and what is still open. Empty when your unit is the last one.
 
 Your dispatch may name a unit ("Unit 3 of 10"): answer only that unit's points, and stop when they are answered. The unit must fit about 30 minutes. If you cannot finish in that time, return what you have and say what is open; do not keep going.
-- `fits_one_pr`: false when the Objective is too large for one PR, or depends on another sub-issue the issue does not list; name it in `evidence`.
+If the Objective looks too large for one PR, or depends on another sub-issue the issue does not list, say so in `evidence`; the planner and reviewer decide splits, not you.

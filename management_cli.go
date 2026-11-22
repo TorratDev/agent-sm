@@ -97,13 +97,10 @@ func manageRun(c *Ctx, active bool, pr int, progress string, reconcile bool) err
 func pendingFollowUp(c *Ctx, exit Exit) error {
 	plan := c.Proposal
 	if plan == nil {
-		reason := "work does not fit one PR"
-		if exit == GaveUp {
-			reason = "fix limit reached"
-		}
+		reason := followUpReason(c, exit)
 		plan = &WorkPlan{ID: "follow-up-" + strconv.Itoa(c.Issue), Items: []WorkItem{{
 			ID: "follow-up", Kind: "story", Title: c.Title + " (follow-up)",
-			Body: fmt.Sprintf("Source: %s\n\nDone so far:\n%s\n\nRemaining work:\n%s\n%s\n\nReason: %s", c.IssueURL, c.Summary, c.Feedback, c.Evidence, reason),
+			Body: fmt.Sprintf("Source: %s\n\n%s\n\nReason: %s", c.IssueURL, followUpBody(c, reason), reason),
 		}}}
 	}
 	if err := plan.validate(); err != nil {

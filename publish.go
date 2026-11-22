@@ -157,11 +157,37 @@ func publish(c *Ctx) Out {
 	return Ok
 }
 
-// followUp files the follow-up issue the orchestrator created after 3 REVISE rounds or a split.
+// followUpReason says why a run needs a follow-up issue, or "" when it needs none.
+func followUpReason(c *Ctx, exit Exit) string {
+	switch {
+	case exit == SplitExit:
+		return "work does not fit one PR"
+	case exit == GaveUp && c.Rounds >= maxExecute:
+		return fmt.Sprintf("%d REVISE rounds without a PASS", maxExecute)
+	case exit == Ready && c.Partial: // the PR closes the issue, so the rest needs its own
+		return "the PR delivers part of the work"
+	}
+	return ""
+}
+
+// followUpBody is the done and remaining work for a follow-up, shortened by a Haiku session.
+// The raw notes stand in when that session fails, so a follow-up is never lost to it.
+func followUpBody(c *Ctx, reason string) string {
+	raw := fmt.Sprintf("## Done so far\n%s\n\n## Remaining work\n%s", c.Summary, c.Feedback+c.Evidence)
+	var r struct{ Body string }
+	prompt := fmt.Sprintf("Issue #%d: %s\nReason for the follow-up: %s\n\n%s", c.Issue, c.Title, reason, tail(raw, 60000))
+	if agent(c, Summarize, prompt, &r) != Ok || strings.TrimSpace(r.Body) == "" {
+		return tail(raw, 60000)
+	}
+	return r.Body
+}
+
+// followUp files the follow-up issue after a split, 3 REVISE rounds, or a partial delivery.
 // It needs SM_EPIC (the epic the follow-up joins) and a publish level.
 func followUp(c *Ctx, exit Exit) {
+	reason := followUpReason(c, exit)
 	if settings.Management.Mode == "service" {
-		if c.Proposal != nil || exit == SplitExit || (exit == GaveUp && c.Rounds >= maxExecute) {
+		if c.Proposal != nil || reason != "" {
 			if err := pendingFollowUp(c, exit); err != nil {
 				c.ManagementError = "cannot persist issue proposal: " + err.Error()
 				logEvent(map[string]any{"event": "issue-proposal-error", "err": err.Error()})
@@ -169,20 +195,19 @@ func followUp(c *Ctx, exit Exit) {
 		}
 		return
 	}
-	if c.Level == levelNone || !(exit == SplitExit || (exit == GaveUp && c.Rounds >= maxExecute)) {
+	if c.Level == levelNone || reason == "" {
 		return
 	}
 	epic := os.Getenv("SM_EPIC")
 	if epic == "" {
 		logEvent(map[string]any{"event": "follow-up-skipped", "why": "set SM_EPIC to create it"})
+		// say it on the issue too, or a split run leaves no trace outside events.jsonl
+		gh(c, "issue", "comment", strconv.Itoa(c.Issue), "--body", fmt.Sprintf(
+			"agent-sm ended (%s: %s) and filed no follow-up issue: SM_EPIC is not set.\n\n%s", exit, reason, followUpBody(c, reason)))
 		return
 	}
-	reason := "work does not fit one PR"
-	if exit == GaveUp {
-		reason = fmt.Sprintf("%d REVISE rounds without a PASS", maxExecute)
-	}
-	body := fmt.Sprintf("Done so far: %s\n\nRemaining work: %s\n\nReason for split: %s\n\nParent: #%d\nEpic: #%s\nDependencies: #%d",
-		c.Summary, c.Feedback+c.Evidence, reason, c.Issue, epic, c.Issue)
+	body := fmt.Sprintf("%s\n\nReason for split: %s\n\nParent: #%d\nEpic: #%s\nDependencies: #%d",
+		followUpBody(c, reason), reason, c.Issue, epic, c.Issue)
 	if url, ok := gh(c, "issue", "create", "--title", c.Title+" (follow-up)", "--body", body, "--label", "follow-up"); ok {
 		logEvent(map[string]any{"event": "follow-up", "url": url})
 	}

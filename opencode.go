@@ -499,7 +499,7 @@ func opencodeModelID(model string) string {
 func modelOptions(provider string) []string {
 	switch provider {
 	case "claude":
-		return []string{sonnet, opus, "claude-haiku-5-5", "claude-fable-5-2"}
+		return []string{sonnet, opus, haiku, "claude-fable-5-2"}
 	case "opencode":
 		models := []string{opencodeDefaultModel, opencodeDecisionModel}
 		seen := map[string]bool{opencodeDefaultModel: true, opencodeDecisionModel: true}

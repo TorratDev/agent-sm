@@ -12,7 +12,7 @@ import (
 
 // Every (state, out) a step may return must have a rule: next() must not panic.
 func TestTableHasNoHoles(t *testing.T) {
-	for i, st := range steps {
+	for i, st := range steps[:numStates] { // Summarize sits outside the graph
 		s := State(i)
 		if st.Name == "" || st.Run == nil || len(st.Outs) == 0 {
 			t.Errorf("state %d is not fully declared: %+v", i, st)
@@ -288,5 +288,32 @@ func TestWriteStatsRecordsTimeRepoAndSharedPath(t *testing.T) {
 	}
 	if _, err := time.Parse(time.RFC3339, st.T); err != nil {
 		t.Fatalf("t = %q: %v", st.T, err)
+	}
+}
+
+func TestFollowUpReason(t *testing.T) {
+	for _, tc := range []struct {
+		c    Ctx
+		exit Exit
+		want bool
+	}{
+		{Ctx{}, SplitExit, true},
+		{Ctx{Partial: true}, Ready, true},
+		{Ctx{}, Ready, false},
+		{Ctx{Rounds: maxExecute}, GaveUp, true},
+		{Ctx{}, GaveUp, false},
+		{Ctx{Partial: true}, Stopped, false},
+	} {
+		if got := followUpReason(&tc.c, tc.exit) != ""; got != tc.want {
+			t.Errorf("followUpReason(%+v, %s) set = %v, want %v", tc.c, tc.exit, got, tc.want)
+		}
+	}
+}
+
+func TestFollowUpBodyFallsBackToRawNotes(t *testing.T) {
+	useProfile(t, defaultProfile("copilot"))
+	c := &Ctx{Scratch: t.TempDir(), Summary: "did a", Evidence: "open b", RunBudget: 1, CostUnknown: 1} // over budget: no session runs
+	if got := followUpBody(c, "split"); !strings.Contains(got, "did a") || !strings.Contains(got, "open b") {
+		t.Fatalf("followUpBody = %q", got)
 	}
 }

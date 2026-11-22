@@ -60,6 +60,9 @@ const (
 	Review
 	Publish
 	numStates
+	// Summarize is an agent step outside the graph: followUp runs it to shorten a follow-up body.
+	Summarize = numStates
+	numSteps  = numStates + 1
 )
 
 func (s State) String() string { return steps[s].Name }
@@ -123,6 +126,7 @@ const shProbe = "Bash(~/venvs/desmume/bin/python:*),Bash(python3:*),Bash(export:
 const (
 	sonnet = "claude-sonnet-5-5"
 	opus   = "claude-opus-5-5"
+	haiku  = "claude-haiku-5-5" // small text jobs, such as a follow-up body
 )
 
 // stepModel is the model a step runs on: SM_MODEL_<STATE> if set, else the step's default.
@@ -130,18 +134,18 @@ func stepModel(st Step) string {
 	return settings.model(st)
 }
 
-var steps [numStates]Step
+var steps [numSteps]Step
 
 func init() { // not a composite literal at package level: the step functions refer back to steps
-	steps = [numStates]Step{
+	steps = [numSteps]Step{
 		Prepare: {Name: "prepare", Run: prepare, Outs: []Out{Ok, Blocked, Fail}},
 		Plan: {Name: "plan", Run: plan, Outs: []Out{Ok, Direct, Blocked, Split, Invalid, Timeout, OverBudget},
 			Role: "planner", Model: sonnet,
 			Schema: `{"type":"object","properties":{"status":{"enum":["plan","blocked"]},"objective":{"type":"string"},"points":{"type":"array","items":{"type":"string"}},"points_derived":{"type":"boolean"},"files":{"type":"array","items":{"type":"string"}},"verification":{"type":"string"},"needs_investigation":{"type":"boolean"},"fits_one_pr":{"type":"boolean"},"units":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"points":{"type":"array","items":{"type":"string"}}},"required":["id","title","points"],"additionalProperties":false}}},"required":["status","objective","points","points_derived","files","verification","needs_investigation","fits_one_pr","units"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead + ",Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*)"},
-		Investigate: {Name: "investigate", Run: investigate, Outs: []Out{Ok, More, Blocked, Split, Invalid, Timeout, OverBudget},
+		Investigate: {Name: "investigate", Run: investigate, Outs: []Out{Ok, More, Blocked, Invalid, Timeout, OverBudget},
 			Role: "investigator", Model: sonnet,
-			Schema: `{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"},"fits_one_pr":{"type":"boolean"}},"required":["status","evidence","handoff","fits_one_pr"],"additionalProperties":false}`,
+			Schema: `{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"}},"required":["status","evidence","handoff"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead + ",Bash(git log:*),Bash(git grep:*),Bash(git status:*),Bash(gh issue view:*)"},
 		Execute: {Name: "execute", Run: execute, Outs: []Out{Ok, Blocked, Fail, Invalid, Timeout, OverBudget},
 			Role: "executor", Model: sonnet,
@@ -154,6 +158,10 @@ func init() { // not a composite literal at package level: the step functions re
 			Schema: `{"type":"object","properties":{"verdict":{"enum":["PASS","REVISE","SPLIT","ESCALATE"]},"reasons":{"type":"array","items":{"type":"string"}}},"required":["verdict","reasons"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead + ",Bash(git diff:*),Bash(git log:*)"},
 		Publish: {Name: "publish", Run: publish, Outs: []Out{Ok, Blocked, Fail}},
+		Summarize: {Name: "summarize", Outs: []Out{Ok, Invalid, Timeout, OverBudget},
+			Role: "summarizer", Model: haiku,
+			Schema: `{"type":"object","properties":{"body":{"type":"string"}},"required":["body"],"additionalProperties":false}`,
+			Allow:  "Read"},
 	}
 	var schema map[string]any
 	var proposal map[string]any
@@ -224,8 +232,6 @@ func next(s State, o Out, visits [numStates]int) Next {
 			return goTo(Investigate)
 		case Blocked:
 			return done(GaveUp)
-		case Split:
-			return done(SplitExit)
 		}
 	case Execute:
 		switch o {
@@ -293,6 +299,7 @@ type Ctx struct {
 	Files           []string // plan -> check (scope gate), execute, review
 	Verification    string
 	Merged          bool   // publish merged the PR
+	Partial         bool   // the last execute said "partial": the run files a follow-up for the rest
 	Units           []Unit // plan -> investigate: one session per unit, each sized for about 30 minutes
 	UnitIdx         int
 	Handoff         string // notes earlier units leave for later ones
@@ -836,10 +843,9 @@ func plan(c *Ctx) Out {
 
 func investigate(c *Ctx) Out {
 	var r struct {
-		Status    string
-		Evidence  string
-		Handoff   string
-		FitsOnePR bool `json:"fits_one_pr"`
+		Status   string
+		Evidence string
+		Handoff  string
 	}
 	u := Unit{ID: "all", Title: c.Objective, Points: c.Points}
 	if len(c.Units) > 0 {
@@ -862,9 +868,6 @@ func investigate(c *Ctx) Out {
 	if r.Handoff != "" {
 		c.Handoff += "\n- " + u.ID + ": " + r.Handoff
 		os.WriteFile(filepath.Join(c.Scratch, "handoff.md"), []byte(c.Handoff), 0o644)
-	}
-	if !r.FitsOnePR {
-		return Split
 	}
 	c.UnitIdx++
 	switch {
@@ -903,7 +906,7 @@ func execute(c *Ctx) Out {
 	if o := agent(c, Execute, dispatch(c, steps[Execute].Role, extra), &r); o != Ok {
 		return o
 	}
-	c.Summary = r.Summary
+	c.Summary, c.Partial = r.Summary, r.Status == "partial"
 	if r.Status == "blocked" {
 		return Blocked
 	}
