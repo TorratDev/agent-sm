@@ -27,6 +27,7 @@ type Profile struct {
 	Commands       map[string][]string `json:"commands,omitempty"`
 	NotesDir       string              `json:"notes_dir,omitempty"`
 	AddDirs        []string            `json:"add_dirs,omitempty"`
+	Links          []string            `json:"links,omitempty"` // gitignored repo files symlinked into each worktree, e.g. a ROM dump
 	Legacy         bool                `json:"legacy_rust_ghidra,omitempty"`
 	Base           string              `json:"base"`
 	Jira           JiraConfig          `json:"jira,omitempty"`
@@ -355,6 +356,11 @@ func (p Profile) validateFor(managementOnly bool) error {
 		}
 		if !st.IsDir() {
 			return fmt.Errorf("add_dirs entries must be directories")
+		}
+	}
+	for _, f := range p.Links {
+		if f = filepath.Clean(f); f == "." || filepath.IsAbs(f) || f == ".." || strings.HasPrefix(f, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("links must be paths inside the repository")
 		}
 	}
 	if len(p.Checks) == 0 && !managementOnly {

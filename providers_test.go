@@ -1379,3 +1379,27 @@ esac
 		}
 	}
 }
+
+func TestWorktreeLinks(t *testing.T) {
+	repo, dir := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "pmdb.nds"), []byte("rom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SM_LINKS", "pmdb.nds") // listed twice: the second is skipped
+	if err := linkFiles(repo, dir, []string{"pmdb.nds", "missing.bin"}); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "pmdb.nds")); err != nil || string(b) != "rom" {
+		t.Fatalf("pmdb.nds not linked: %q, %v", b, err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "missing.bin")); err == nil {
+		t.Fatal("linked a file the main checkout does not have")
+	}
+	for _, bad := range []string{"../x", "/etc/passwd", "."} {
+		p := defaultProfile("claude")
+		p.Checks, p.Links = []string{"true"}, []string{bad}
+		if p.validate() == nil {
+			t.Fatalf("accepted link %q", bad)
+		}
+	}
+}

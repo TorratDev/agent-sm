@@ -213,7 +213,7 @@ func (r *Runner) leftovers() []int {
 }
 
 // worktreeAt reserves a fresh branch and worktree without touching earlier attempts.
-func (r *Runner) worktreeAt(n int, base string) (string, string, error) {
+func (r *Runner) worktreeAt(n int, base string, links []string) (string, string, error) {
 	branch, dir, err := nextIssueBranch(r.repo, n, r.worktreeRoot())
 	if err != nil {
 		return "", "", err
@@ -226,12 +226,34 @@ func (r *Runner) worktreeAt(n int, base string) (string, string, error) {
 	if out, err := sh(r.repo, "git", "worktree", "add", "-b", branch, dir, base); err != nil {
 		return "", "", fmt.Errorf("git worktree add: %s", tail(out, 300))
 	}
-	for _, f := range strings.Split(os.Getenv("SM_LINKS"), ",") { // gitignored files the run needs, e.g. the ROM dump
-		if f = strings.TrimSpace(f); f != "" {
-			os.Symlink(filepath.Join(r.repo, f), filepath.Join(dir, f))
-		}
+	if err := linkFiles(r.repo, dir, links); err != nil {
+		return "", "", err
 	}
 	return dir, branch, nil
+}
+
+// linkFiles symlinks gitignored files (profile links plus SM_LINKS) from the main checkout into dir;
+// a file the checkout does not have is skipped.
+func linkFiles(repo, dir string, links []string) error {
+	for _, f := range append(slices.Clone(links), strings.Split(os.Getenv("SM_LINKS"), ",")...) {
+		if f = strings.TrimSpace(f); f == "" {
+			continue
+		}
+		src, dst := filepath.Join(repo, f), filepath.Join(dir, f)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if _, err := os.Lstat(dst); err == nil {
+			continue // tracked in the branch, or listed twice
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return fmt.Errorf("link %s: %w", f, err)
+		}
+		if err := os.Symlink(src, dst); err != nil {
+			return fmt.Errorf("link %s: %w", f, err)
+		}
+	}
+	return nil
 }
 
 func (j *Job) scratch() string {
@@ -310,7 +332,7 @@ func (r *Runner) runOne(j *Job) {
 	}
 	r.set(func() { j.Base = base })
 	r.wt.Lock()
-	wt, branch, err := r.worktreeAt(j.Issue, base)
+	wt, branch, err := r.worktreeAt(j.Issue, base, p.Links)
 	r.wt.Unlock()
 	if err != nil {
 		r.set(func() { j.Err = err.Error() })

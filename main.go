@@ -753,7 +753,7 @@ func prepare(c *Ctx) Out {
 
 // basePassedFile names the marker of a base that passed the checks: one per tree content and check list,
 // so a new run on the same base skips the check. "" when the tree cannot be read.
-// shortcut: ignores toolchain and SM_LINKS changes; add them to the key if a passed base ever goes stale.
+// shortcut: ignores toolchain, links and SM_LINKS changes; add them to the key if a passed base ever goes stale.
 func basePassedFile(repo string) string {
 	tree, err := sh(repo, "git", "rev-parse", "HEAD^{tree}")
 	if err != nil {

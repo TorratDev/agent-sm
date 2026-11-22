@@ -11,6 +11,7 @@
     "cargo fmt --all -- --check",
     "cargo clippy --workspace --all-targets -- -D warnings"
   ],
+  "links": ["pmdb.nds"],
   "commands": {
     "execute": ["cargo fmt", "cargo check", "cargo clippy", "cargo build", "cargo test"]
   }

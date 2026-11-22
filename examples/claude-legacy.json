@@ -1,6 +1,7 @@
 {
   "provider": "claude",
   "legacy_rust_ghidra": true,
+  "links": ["pmdb.nds"],
   "format": "cargo fmt --all",
   "checks": [
     "cargo fmt --all -- --check",

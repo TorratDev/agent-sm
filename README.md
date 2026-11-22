@@ -97,7 +97,7 @@ in place; delete it before running the issue again.
 | `SM_GHIDRA_COPY` | `none` | Legacy-profile-only Ghidra project copy. |
 | `SM_EXPORT` | `~/rescue-re/export` | Legacy-profile-only export; generic runs do not inspect it. |
 | `SM_EPIC` | none | Epic that a follow-up issue joins (split, three failed fix rounds, or a partial delivery). Unset: the run comments on the issue instead. |
-| `SM_LINKS` | none | Comma-separated gitignored files to symlink into a worktree (serve). |
+| `SM_LINKS` | none | Comma-separated gitignored files to symlink into a worktree (serve), added to the profile's `links`. |
 | `SM_STATS` | `$SM_SCRATCH_ROOT/stats.jsonl` | Where session stats are appended. |
 | `SM_SCRATCH_ROOT`, `SM_SCRATCH`, `SM_EVENTS` | `~/.local/state/agent-sm` (or `$XDG_STATE_HOME/agent-sm`), `<root>/<issue>`, `<scratch>/events.jsonl` | Where run data goes. |
 
@@ -122,7 +122,7 @@ receive an immutable resolved snapshot, including models and limits.
 Supported fields are `provider`, `models` (state to CLI model ID), `checks`, `base_checks` (what
 `prepare` runs on the untouched base; default `checks`), `format`,
 `required_test_reports`, `session_limit`, `run_limit`, `timeout_minutes`, `commands`,
-`notes_dir`, `add_dirs`, `base`, `jira`, `management`, `transcripts`, `concurrency`, and the Claude-specific `claude_allow`,
+`notes_dir`, `add_dirs`, `links` (gitignored repo files such as a ROM dump, symlinked from the main checkout into each worktree; missing ones are skipped), `base`, `jira`, `management`, `transcripts`, `concurrency`, and the Claude-specific `claude_allow`,
 `claude_extra_allow`, `audit`, and `legacy_rust_ghidra`. Unknown fields fail startup.
 The page can select Copilot, Claude, or OpenCode; switching providers uses that provider's limit defaults,
 while provider-specific options still require a compatible profile.
