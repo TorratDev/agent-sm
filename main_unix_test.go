@@ -18,7 +18,8 @@ func TestAgentKillsProcessGroup(t *testing.T) {
 	useProfile(t, defaultProfile("claude"))
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "pid")
-	os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nsleep 300 &\necho $! > "+pidFile+"\nwait\n"), 0o755)
+	// Write then rename, so the watcher below never reads a half-written pid file.
+	os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nsleep 300 &\necho $! > "+pidFile+".tmp && mv "+pidFile+".tmp "+pidFile+"\nwait\n"), 0o755)
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	t.Setenv("SM_STATS", filepath.Join(dir, "stats.jsonl"))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -27,7 +28,6 @@ func TestAgentKillsProcessGroup(t *testing.T) {
 	go func() {
 		for {
 			if _, err := os.Stat(pidFile); err == nil {
-				time.Sleep(50 * time.Millisecond) // let the shell finish writing it
 				cancel()
 				return
 			}
@@ -44,10 +44,13 @@ func TestAgentKillsProcessGroup(t *testing.T) {
 	if pid == 0 {
 		t.Fatal("no child pid recorded")
 	}
-	time.Sleep(100 * time.Millisecond)
-	if syscall.Kill(pid, 0) == nil {
-		syscall.Kill(pid, syscall.SIGKILL)
-		t.Errorf("child process %d outlived the killed session", pid)
+	// The signal is asynchronous: give the child up to 5s to die instead of a fixed sleep.
+	for deadline := time.Now().Add(5 * time.Second); syscall.Kill(pid, 0) == nil; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			syscall.Kill(pid, syscall.SIGKILL)
+			t.Errorf("child process %d outlived the killed session", pid)
+			break
+		}
 	}
 	if c.CostUnknown != 1 {
 		t.Errorf("CostUnknown = %d, want 1 for a killed session", c.CostUnknown)

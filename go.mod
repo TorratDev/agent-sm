@@ -1,6 +1,6 @@
 module agent-sm
 
-go 1.24.0
+go 1.27.0
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.1 // indirect

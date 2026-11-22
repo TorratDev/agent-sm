@@ -53,6 +53,7 @@ type Runner struct {
 	history           []Job
 	batch             []int // the issues started together: reset when a run is requested while nothing is queued or running
 	working           bool
+	run               func(*Job) // runs one job; nil means runOne. Tests replace it to drive the scheduler without processes.
 }
 
 var (
@@ -140,10 +141,14 @@ func (r *Runner) loop() {
 			j.Repo = r.repo
 		}
 		r.running = append(r.running, j)
+		run := r.runOne
+		if r.run != nil {
+			run = r.run
+		}
 		r.mu.Unlock()
 		go func() {
 			defer r.slots.release()
-			r.runOne(j)
+			run(j)
 			r.mu.Lock()
 			r.running = slices.DeleteFunc(r.running, func(x *Job) bool { return x == j })
 			delete(r.cmds, j)
