@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Publish levels (SM_PUBLISH). Default "" stops at a local, staged branch.
@@ -222,6 +224,87 @@ func followUp(c *Ctx, exit Exit) {
 	if c.PR != "" {
 		gh(c, "pr", "comment", c.PR, "--body", fmt.Sprintf("This PR delivers part of #%d. The remaining work is in #%s, a new sub-issue of #%d.", c.Issue, num, c.Issue))
 	}
+}
+
+// Diagnosis is what the auditor found in a failed run's logs, kept as diagnosis.json in its
+// scratch directory; the board shows it and can file it as an issue (Issue holds that URL).
+type Diagnosis struct {
+	Exit  string `json:"exit"`
+	Cause string `json:"cause"`
+	Fix   string `json:"fix"`
+	Kind  string `json:"kind"` // "bug" or "follow-up"
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Issue string `json:"issue,omitempty"`
+}
+
+var diagnosing sync.Map // run directories with an audit going, so a double click starts one
+
+// diagnoseRun runs the auditor on the finished run in dir (the page's Diagnose button) and
+// writes diagnosis.json there. It never runs on its own: the audit is a paid session.
+func diagnoseRun(dir, repo, exit string) (*Diagnosis, error) {
+	if _, busy := diagnosing.LoadOrStore(dir, true); busy {
+		return nil, fmt.Errorf("a diagnosis of this run is already going")
+	}
+	defer diagnosing.Delete(dir)
+	c := &Ctx{}
+	if b, err := os.ReadFile(filepath.Join(dir, "ctx.json")); err == nil {
+		json.Unmarshal(b, c)
+	}
+	if fi, err := os.Stat(c.Repo); err != nil || !fi.IsDir() { // the run's worktree may be gone
+		c.Repo = repo
+	}
+	c.Scratch = dir
+	c.RunBudget, c.Cost, c.CostUnknown = 0, 0, 0 // the run's spent budget must not stop its audit; SessionLimit still applies
+	events, _ := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+	prompt := fmt.Sprintf("Issue #%d: %s\nExit: %s\nScratch directory: %s (run.log, events.jsonl, ctx.json, transcripts/)\nRepository: %s\n\nLast feedback:\n%s\n\nLast verdict:\n%s\n\nEvent log (tail):\n%s",
+		c.Issue, c.Title, exit, dir, c.Repo, tail(c.Feedback, 4000), tail(c.Verdict, 2000), tail(string(events), 20000))
+	var d Diagnosis
+	if o := agent(c, Diagnose, prompt, &d); o != Ok {
+		return nil, fmt.Errorf("the auditor session ended %s", o)
+	}
+	d.Exit = exit
+	b, _ := json.MarshalIndent(d, "", "  ")
+	return &d, os.WriteFile(filepath.Join(dir, "diagnosis.json"), b, 0o644)
+}
+
+var fileDiagnosisMu sync.Mutex // one filing at a time, so a double click files one issue
+
+// fileDiagnosis creates the issue a diagnosis proposes and records its URL in diagnosis.json.
+// A diagnosis already filed returns its issue again.
+func fileDiagnosis(dir, repo string, issue int) (string, error) {
+	fileDiagnosisMu.Lock()
+	defer fileDiagnosisMu.Unlock()
+	path := filepath.Join(dir, "diagnosis.json")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("this run has no diagnosis")
+	}
+	var d Diagnosis
+	if err := json.Unmarshal(b, &d); err != nil || d.Title == "" {
+		return "", fmt.Errorf("diagnosis.json is invalid")
+	}
+	if d.Issue != "" {
+		return d.Issue, nil
+	}
+	body := fmt.Sprintf("%s\n\nFound by the agent-sm auditor in the failed run of #%d (exit: %s).", d.Body, issue, d.Exit)
+	args := []string{"issue", "create", "--title", d.Title, "--body", body}
+	out, err := sh(repo, "gh", append(args, "--label", d.Kind)...)
+	if err != nil { // the repo may have no such label
+		out, err = sh(repo, "gh", args...)
+	}
+	if err != nil {
+		return "", fmt.Errorf("gh issue create: %s", tail(out, 300))
+	}
+	d.Issue = strings.TrimSpace(out)
+	if d.Kind == "follow-up" { // a sub-issue of the run's issue, as followUp files them
+		num := d.Issue[strings.LastIndex(d.Issue, "/")+1:]
+		if id, err := sh(repo, "gh", "api", "repos/{owner}/{repo}/issues/"+num, "--jq", ".id"); err == nil {
+			sh(repo, "gh", "api", "-X", "POST", fmt.Sprintf("repos/{owner}/{repo}/issues/%d/sub_issues", issue), "-F", "sub_issue_id="+strings.TrimSpace(id))
+		}
+	}
+	b, _ = json.MarshalIndent(d, "", "  ")
+	return d.Issue, os.WriteFile(path, b, 0o644)
 }
 
 // fixesBaseMarker in an issue body skips the base check in prepare: that issue is the fix.

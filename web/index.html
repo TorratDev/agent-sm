@@ -239,6 +239,16 @@
     .card { padding: 14px; }
     th, td { padding: 6px 10px; }
   }
+  /* the auditor's diagnosis of a failed run */
+  #diag { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 64px); padding: 20px; border: 1px solid var(--line); border-top: 4px solid var(--bad); border-radius: 10px; background: var(--card); color: var(--ink); }
+  #diag::backdrop { background: rgb(0 0 0 / .45); }
+  #diag h2 { margin: 0 0 4px; font-size: 18px; }
+  #diag h3 { margin: 16px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--mute); }
+  #diag p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #diag .kind { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 700; background: var(--bad-soft); color: var(--bad); }
+  #diag .kind.follow-up { background: var(--warn-soft); color: var(--warn); }
+  #diag .acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 20px; }
+  #diag .acts .btn { margin-left: 0; }
 </style>
 </head>
 <body>
@@ -325,10 +335,20 @@
   </section>
 </main>
 
+<dialog id="diag" aria-labelledby="diagTitle">
+  <h2 id="diagTitle"></h2>
+  <div><span class="kind" id="diagKind"></span> <span class="note" id="diagExit"></span></div>
+  <h3>Why it failed</h3><p id="diagCause"></p>
+  <h3>How to solve it</h3><p id="diagFix"></p>
+  <h3>Proposed issue</h3><p id="diagIssue"></p>
+  <div class="acts"><span class="note" id="diagNote"></span><button class="btn" id="diagClose">Close</button><button class="btn primary" id="diagFile"></button></div>
+</dialog>
+
 <script>
 const TOKEN = "__TOKEN__";
 const BAD_OUT = new Set(["fail", "blocked", "invalid", "split", "escalate"]);
 const ERR_EXIT = new Set(["gave-up", "errored", "escalated"]);
+let DIAGNOSING = new Set(); // runs whose audit is going
 let STATIONS = [], LIMITS = {}, RUNS = [], QUEUE = {}, ISSUES = [], SEL = new Set(), BATCH = new Set();
 let VIEW = "pipeline", PICK = location.hash.slice(1);
 const $ = id => document.getElementById(id);
@@ -410,6 +430,8 @@ function card(c) {
   const running = (QUEUE.running || []).some(j => String(j.issue) === String(c.issue));
   const acts = (running && QUEUE.can_run ? `<button class="btn danger" data-act="stop">Stop</button>` : "")
     + (!running && (c.exit || c.stalled) ? `<button class="btn" data-act="dismiss" title="Move this run's folder to archive/ so the board forgets it">Dismiss</button>` : "")
+    + (c.diagnosis ? `<button class="btn" data-act="diagnosis" title="Why this run failed, from its logs">Diagnosis</button>`
+      : !running && ((c.exit && c.exit !== "ready") || c.stalled) ? `<button class="btn" data-act="diagnose" title="Run an audit agent over this run's logs (one paid session, a few minutes)"${DIAGNOSING.has(String(c.issue)) ? " disabled>Diagnosing…" : ">Diagnose"}</button>` : "")
     + (c.pr ? `<a class="btn primary" href="${esc(c.pr)}" target="_blank" rel="noopener">Open PR</a>` : "");
   return `<article class="card tone-${c.tone}${String(c.issue) === PICK ? " picked" : ""}" data-n="${esc(c.issue)}">
     <div class="c-top"><span class="c-n">#${esc(c.issue)}</span><span class="pill">${esc(c.status)}</span><span class="c-meta">${esc(c.meta)}</span></div>
@@ -669,11 +691,51 @@ $("grid").addEventListener("click", async e => {
     try { renderQueue(await post(withAgent("/api/stop"))); renderBoard(); } catch (err) { alert("cannot stop: " + err.message); }
     return;
   }
+  if (e.target.closest("[data-act=diagnosis]")) { openDiag(art.dataset.n); return; }
+  const db = e.target.closest("[data-act=diagnose]");
+  if (db) {
+    DIAGNOSING.add(art.dataset.n); db.disabled = true; db.textContent = "Diagnosing…"; // the poll re-renders cards: the set keeps it disabled
+    try {
+      const d = await post(withRepo("/api/diagnose?issue=" + encodeURIComponent(art.dataset.n)));
+      const r = RUNS.find(r => String(r.issue) === art.dataset.n); if (r) r.diagnosis = d;
+      openDiag(art.dataset.n); tick();
+    } catch (err) { alert("cannot diagnose: " + err.message); }
+    DIAGNOSING.delete(art.dataset.n); renderBoard();
+    return;
+  }
   if (e.target.closest("[data-act=dismiss]")) {
     try { await post("/api/dismiss?issue=" + encodeURIComponent(art.dataset.n)); if (PICK === art.dataset.n) pick(""); tick(); } catch (err) { alert("cannot dismiss: " + err.message); }
     return;
   }
   pick(art.dataset.n === PICK ? "" : art.dataset.n);
+});
+// The diagnosis popup: what the auditor found, and a button to file it as a bug or a follow-up.
+let DIAG_N = "";
+function openDiag(n) {
+  const d = (RUNS.find(r => String(r.issue) === String(n)) || {}).diagnosis; if (!d) return;
+  DIAG_N = n;
+  $("diagTitle").textContent = `#${n}: ${d.title}`;
+  $("diagKind").textContent = d.kind; $("diagKind").className = "kind " + d.kind;
+  $("diagExit").textContent = "run exit: " + d.exit;
+  $("diagCause").textContent = d.cause; $("diagFix").textContent = d.fix; $("diagIssue").textContent = d.title;
+  showFiled(d.issue, d.kind);
+  $("diag").showModal();
+}
+function showFiled(url, kind) {
+  $("diagFile").textContent = url ? "Open issue" : kind === "bug" ? "Create bug issue" : "Create follow-up issue";
+  $("diagFile").dataset.url = url || ""; $("diagFile").disabled = false;
+  $("diagNote").textContent = url ? "Filed as " + url : "";
+}
+$("diagClose").addEventListener("click", () => $("diag").close());
+$("diagFile").addEventListener("click", async () => {
+  const b = $("diagFile");
+  if (b.dataset.url) { window.open(b.dataset.url, "_blank", "noopener"); return; }
+  b.disabled = true; $("diagNote").textContent = "Creating…";
+  try {
+    const { url } = await post(withRepo("/api/diagnosis-issue?issue=" + encodeURIComponent(DIAG_N)));
+    const r = RUNS.find(r => String(r.issue) === String(DIAG_N)); if (r && r.diagnosis) r.diagnosis.issue = url;
+    showFiled(url);
+  } catch (err) { b.disabled = false; $("diagNote").textContent = "Cannot create: " + err.message; }
 });
 $("dclose").addEventListener("click", () => pick(""));
 $("flow").addEventListener("click", e => { const b = e.target.closest("button[data-n]"); if (b) { pick(b.dataset.n); $("detail").scrollIntoView({ block: "start" }); } });

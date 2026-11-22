@@ -85,7 +85,7 @@ in place; delete it before running the issue again.
 | `SM_CONCURRENCY` | `1` | Starting value of the page's **In parallel** field: how many queued issues `serve` runs at once (1–16, across all selected repositories). Choosing another number and pressing Run changes it for the whole server; lowering it lets running jobs finish and holds new ones back. Each job gets its own `<n>-sm` worktree and branch; one issue never runs twice at once, and a queued issue that is already running waits. Session and run limits apply to each job, so the total spend can reach this many times the run limit. Stop and Ctrl-C end every running job. Profile field: `concurrency`. |
 | `SM_BUDGET`, `SM_RUN_BUDGET` | none | Legacy dollar-limit aliases for Claude and OpenCode. Rejected for Copilot rather than converted to credits. |
 | `SM_TIMEOUT` | `60` | Minutes before an agent session and its child processes are killed. |
-| `SM_MODEL_<STATE>` | Copilot: `auto`; Claude: sonnet 5.5, opus 5.5 for review, haiku 5.5 for `SUMMARIZE` (the follow-up body); OpenCode: `opencode/deepseek-v4.1-flash-free`; plan/review prefer `jev-1.13-free`, then `opencode/glm-5.3-flash`, when installed | Explicit CLI model ID per step. The page offers the selected provider's models as suggestions, while keeping the value editable. The web input wins for queued runs. |
+| `SM_MODEL_<STATE>` | Copilot: `auto`; Claude: sonnet 5.5, opus 5.5 for review, haiku 5.5 for `SUMMARIZE` (the follow-up body); sonnet 5.5 for `DIAGNOSE` (the failed-run audit); OpenCode: `opencode/deepseek-v4.1-flash-free`; plan/review prefer `jev-1.13-free`, then `opencode/glm-5.3-flash`, when installed | Explicit CLI model ID per step. The page offers the selected provider's models as suggestions, while keeping the value editable. The web input wins for queued runs. |
 | `SM_CHECKS` | profile (required) | Check commands, one per line. Empty checks fail configuration. |
 | `SM_FMT` | profile or none | Formatter run before staging/checks; failure is explicit. Setting `SM_CHECKS` without `SM_FMT` disables the profile formatter. |
 | `SM_ALLOW_FILE` | none | Claude-only JSON `{"state": "tools"}`; invalid files fail startup. Prefer profile `commands` for portable shell tools. |
@@ -100,6 +100,8 @@ in place; delete it before running the issue again.
 | `SM_LINKS` | none | Comma-separated gitignored files to symlink into a worktree (serve), added to the profile's `links`. |
 | `SM_STATS` | `$SM_SCRATCH_ROOT/stats.jsonl` | Where session stats are appended. |
 | `SM_SCRATCH_ROOT`, `SM_SCRATCH`, `SM_EVENTS` | `~/.local/state/agent-sm` (or `$XDG_STATE_HOME/agent-sm`), `<root>/<issue>`, `<scratch>/events.jsonl` | Where run data goes. |
+
+A failed card on the board (errored, gave up, stalled) has a **Diagnose** button. It runs an auditor session (`diagnose` step, outside the state graph; it is never run on its own) that reads the run's `events.jsonl`, `run.log`, `ctx.json` and `transcripts/` and writes `diagnosis.json`: the cause, the fix, and whether it is a `bug` or a `follow-up`. A popup shows it and offers to create that issue (labelled `bug` or `follow-up` when the label exists; a follow-up becomes a sub-issue). Filing is unavailable in service management mode.
 
 A session that hits `SM_TIMEOUT` returns `timeout`; an observed native limit exhaustion
 returns `over-budget`. Both end with `gave-up`. Unknown/missing usage is never reported as

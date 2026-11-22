@@ -306,19 +306,20 @@ type runStep struct {
 
 // runSummary is one card on the board, read from a run's scratch directory.
 type runSummary struct {
-	Issue    string    `json:"issue"`
-	Title    string    `json:"title"`
-	Steps    []runStep `json:"steps"`
-	Exit     string    `json:"exit,omitempty"`
-	Live     string    `json:"live,omitempty"` // the state running now, from next() on the last step
-	Stalled  bool      `json:"stalled,omitempty"`
-	LastTool string    `json:"last_tool,omitempty"`
-	Cost     float64   `json:"cost_usd"`
-	Started  string    `json:"started,omitempty"`
-	Ended    string    `json:"ended,omitempty"`
-	PR       string    `json:"pr,omitempty"`
-	Feedback string    `json:"feedback,omitempty"` // first line of the last check/review failure
-	Verdict  string    `json:"verdict,omitempty"`  // first line of the reviewer's reasons
+	Issue     string     `json:"issue"`
+	Title     string     `json:"title"`
+	Steps     []runStep  `json:"steps"`
+	Exit      string     `json:"exit,omitempty"`
+	Live      string     `json:"live,omitempty"` // the state running now, from next() on the last step
+	Stalled   bool       `json:"stalled,omitempty"`
+	LastTool  string     `json:"last_tool,omitempty"`
+	Cost      float64    `json:"cost_usd"`
+	Started   string     `json:"started,omitempty"`
+	Ended     string     `json:"ended,omitempty"`
+	PR        string     `json:"pr,omitempty"`
+	Feedback  string     `json:"feedback,omitempty"`  // first line of the last check/review failure
+	Verdict   string     `json:"verdict,omitempty"`   // first line of the reviewer's reasons
+	Diagnosis *Diagnosis `json:"diagnosis,omitempty"` // the auditor's finding on a failed run
 }
 
 // firstLine keeps the first line of s, plus the next one when the first is only a heading
@@ -367,6 +368,12 @@ func readRun(dir string, now time.Time) (rs runSummary, ok bool) {
 	var c struct{ Title, Feedback, Verdict string }
 	if b, err := os.ReadFile(filepath.Join(dir, "ctx.json")); err == nil && json.Unmarshal(b, &c) == nil {
 		rs.Title, rs.Feedback, rs.Verdict = c.Title, firstLine(c.Feedback), firstLine(c.Verdict)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "diagnosis.json")); err == nil {
+		var d Diagnosis
+		if json.Unmarshal(b, &d) == nil {
+			rs.Diagnosis = &d
+		}
 	}
 	if rs.Exit != "" {
 		return rs, true
@@ -656,6 +663,65 @@ func serve(issue, addr, repo string) error {
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	})
+	// diagnose runs the auditor on a finished, failed run; the request lasts as long as that session.
+	mux.HandleFunc("/api/diagnose", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(w, r) {
+			return
+		}
+		n, err := strconv.Atoi(r.URL.Query().Get("issue"))
+		d, ok := runDirs(root)[strconv.Itoa(n)]
+		if err != nil || n <= 0 || !ok {
+			http.Error(w, "no such run", http.StatusNotFound)
+			return
+		}
+		rs, _ := readRun(d, time.Now())
+		if rs.Exit == "" && !rs.Stalled || rs.Exit == string(Ready) {
+			http.Error(w, "only a finished, failed run can be diagnosed", http.StatusConflict)
+			return
+		}
+		run, err := runnerFor(r.URL.Query().Get("repo"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		exit := rs.Exit
+		if exit == "" {
+			exit = "stalled"
+		}
+		diag, err := diagnoseRun(d, run.repo, exit)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		json.NewEncoder(w).Encode(diag)
+	})
+	// diagnosis-issue files a run's diagnosis as a bug or follow-up issue, once.
+	mux.HandleFunc("/api/diagnosis-issue", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(w, r) {
+			return
+		}
+		if settings.Management.Mode == "service" { // service mode creates tracker issues only through its journal
+			http.Error(w, "service management files issues itself", http.StatusConflict)
+			return
+		}
+		n, err := strconv.Atoi(r.URL.Query().Get("issue"))
+		d, ok := runDirs(root)[strconv.Itoa(n)]
+		if err != nil || n <= 0 || !ok {
+			http.Error(w, "no such run", http.StatusNotFound)
+			return
+		}
+		run, err := runnerFor(r.URL.Query().Get("repo"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		url, err := fileDiagnosis(d, run.repo, n)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"url": url})
 	})
 	mux.HandleFunc("/api/stop", func(w http.ResponseWriter, r *http.Request) {
 		if authed(w, r) {

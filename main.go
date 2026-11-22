@@ -62,7 +62,9 @@ const (
 	numStates
 	// Summarize is an agent step outside the graph: followUp runs it to shorten a follow-up body.
 	Summarize = numStates
-	numSteps  = numStates + 1
+	// Diagnose is an agent step outside the graph: the page runs it on a failed run's logs to say why.
+	Diagnose = numStates + 1
+	numSteps = numStates + 2
 )
 
 func (s State) String() string { return steps[s].Name }
@@ -162,6 +164,10 @@ func init() { // not a composite literal at package level: the step functions re
 			Role: "summarizer", Model: haiku,
 			Schema: `{"type":"object","properties":{"body":{"type":"string"}},"required":["body"],"additionalProperties":false}`,
 			Allow:  "Read"},
+		Diagnose: {Name: "diagnose", Outs: []Out{Ok, Invalid, Timeout, OverBudget},
+			Role: "auditor", Model: sonnet,
+			Schema: `{"type":"object","properties":{"cause":{"type":"string"},"fix":{"type":"string"},"kind":{"enum":["bug","follow-up"]},"title":{"type":"string"},"body":{"type":"string"}},"required":["cause","fix","kind","title","body"],"additionalProperties":false}`,
+			Allow:  "Read,Grep,Glob," + shRead},
 	}
 	var schema map[string]any
 	var proposal map[string]any

@@ -409,3 +409,22 @@ func TestPassReviewWithRemainingWorkMarksPartial(t *testing.T) {
 		}
 	}
 }
+
+func TestDiagnosis(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(`{"exit":"errored"}`+"\n"), 0o644)
+	// a second click while an audit runs starts no second session
+	diagnosing.Store(dir, true)
+	if _, err := diagnoseRun(dir, dir, "errored"); err == nil {
+		t.Fatal("a second audit of the same run started")
+	}
+	diagnosing.Delete(dir)
+	// a diagnosis on disk shows on the board, and one already filed is not filed again (no gh call)
+	os.WriteFile(filepath.Join(dir, "diagnosis.json"), []byte(`{"exit":"errored","kind":"bug","title":"t","cause":"c","fix":"f","body":"b","issue":"https://x/issues/3"}`), 0o644)
+	if rs, _ := readRun(dir, time.Now()); rs.Diagnosis == nil || rs.Diagnosis.Kind != "bug" {
+		t.Fatalf("readRun diagnosis = %+v", rs.Diagnosis)
+	}
+	if url, err := fileDiagnosis(dir, "/nonexistent", 1); err != nil || url != "https://x/issues/3" {
+		t.Fatalf("fileDiagnosis = %q, %v", url, err)
+	}
+}
