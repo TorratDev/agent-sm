@@ -220,6 +220,26 @@ func TestRunDirsFindsPageRuns(t *testing.T) {
 	}
 }
 
+func TestDismissRunHidesEveryCopy(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{"359", "repos/abc/359/attempt-2", "repos/abc/570"} {
+		os.MkdirAll(filepath.Join(root, rel), 0o755)
+		os.WriteFile(filepath.Join(root, rel, "events.jsonl"), []byte("{}\n"), 0o644)
+	}
+	if err := dismissRun(root, 359); err != nil {
+		t.Fatal(err)
+	}
+	if got := runDirs(root); len(got) != 1 || got["570"] == "" {
+		t.Fatalf("runDirs after dismiss = %v", got)
+	}
+	if moved, _ := filepath.Glob(filepath.Join(root, "archive", "*", "repos", "abc", "359", "attempt-2", "events.jsonl")); len(moved) != 1 {
+		t.Fatal("dismissed run was not kept under archive/")
+	}
+	if dismissRun(root, 359) == nil {
+		t.Fatal("dismissing a gone run should fail")
+	}
+}
+
 func fake(t *testing.T, runs map[State]func(*Ctx) Out) {
 	old := steps
 	t.Cleanup(func() { steps = old })
@@ -315,5 +335,77 @@ func TestFollowUpBodyFallsBackToRawNotes(t *testing.T) {
 	c := &Ctx{Scratch: t.TempDir(), Summary: "did a", Evidence: "open b", RunBudget: 1, CostUnknown: 1} // over budget: no session runs
 	if got := followUpBody(c, "split"); !strings.Contains(got, "did a") || !strings.Contains(got, "open b") {
 		t.Fatalf("followUpBody = %q", got)
+	}
+}
+
+func TestEnqueueGroupsABatch(t *testing.T) {
+	r := &Runner{working: true} // no loop: jobs stay queued
+	r.Enqueue([]Job{{Issue: 5}, {Issue: 6}})
+	r.Enqueue([]Job{{Issue: 6}, {Issue: 7}}) // added while the first batch waits: same batch
+	if got := r.Snapshot()["batch"].([]int); !slices.Equal(got, []int{5, 6, 7}) {
+		t.Fatalf("batch = %v", got)
+	}
+	r.queue = nil // everything finished
+	r.Enqueue([]Job{{Issue: 9}})
+	if got := r.Snapshot()["batch"].([]int); !slices.Equal(got, []int{9}) {
+		t.Fatalf("new batch = %v", got)
+	}
+}
+
+func TestPartialPRNamesItsFollowUpSubIssue(t *testing.T) {
+	useProfile(t, defaultProfile("copilot"))
+	dir := t.TempDir()
+	log := filepath.Join(dir, "gh.log")
+	writeFile(t, filepath.Join(dir, "gh"), `#!/bin/sh
+printf '%s|' "$@" >> "`+log+`"; echo >> "`+log+`"
+case "$1 $2" in
+  "issue create") echo 'https://github.com/example/repo/issues/77';;
+  "api repos/{owner}/{repo}/issues/77") echo 9001;;
+esac
+`, 0o755)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SM_EPIC", "") // no epic: the follow-up is still filed
+	c := &Ctx{Repo: dir, Scratch: dir, Issue: 5, Title: "t", Level: levelPR, Partial: true, PR: "42", RunBudget: 1, CostUnknown: 1}
+	followUp(c, Ready)
+	b, _ := os.ReadFile(log)
+	got := string(b)
+	for _, want := range []string{"Created by: PR #42, which delivers part of #5", "issues/5/sub_issues|-F|sub_issue_id=9001|", "pr|comment|42|--body|This PR delivers part of #5. The remaining work is in #77, a new sub-issue of #5."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("gh calls lack %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestPassReviewWithRemainingWorkMarksPartial(t *testing.T) {
+	dir, scratch := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(dir, "opencode"), "#!/bin/sh\nprintf '%s' \"$SM_TEST_STDOUT\"\n", 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("SM_STATS", filepath.Join(dir, "stats.jsonl"))
+	p := defaultProfile("opencode")
+	p.SessionLimit, p.RunLimit = 1, 5
+	useProfile(t, p)
+	oldEvents := eventsPath
+	eventsPath = filepath.Join(scratch, "events.jsonl")
+	t.Cleanup(func() { eventsPath = oldEvents })
+	cost := 0.1
+	for _, tc := range []struct {
+		result  string
+		partial bool
+	}{
+		{`{"verdict":"PASS","reasons":["ok"],"remaining":["read the copy-gate bounds"]}`, true},
+		{`{"verdict":"PASS","reasons":["ok"],"remaining":[]}`, false},
+		{`{"verdict":"PASS","reasons":["ok"]}`, false},
+	} {
+		t.Setenv("SM_TEST_STDOUT", opencodeOutput(t, tc.result, &cost))
+		c := &Ctx{Repo: dir, Scratch: scratch, RunBudget: 5}
+		if got := review(c); got != Pass {
+			t.Fatalf("%s: review = %v", tc.result, got)
+		}
+		if c.Partial != tc.partial || (tc.partial && !strings.Contains(c.Feedback, "copy-gate bounds")) {
+			t.Fatalf("%s: Partial=%v Feedback=%q", tc.result, c.Partial, c.Feedback)
+		}
+		if tc.partial && followUpReason(c, Ready) == "" {
+			t.Fatal("a partial PASS must need a follow-up")
+		}
 	}
 }

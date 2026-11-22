@@ -22,7 +22,7 @@ Work:
 3. Run the verification the dispatch names (by default scripts/verify.sh: the CI steps fmt, deps, determinism, clippy, tests and doctests, one PASS/FAIL line each) and fix what fails. The program runs it again after you.
 
 Your result is the typed output, not a message to anyone:
-- status "done": the work is complete; `summary` has what you changed and the verification result.
+- status "done": the work is complete, with nothing listed as not done, open or remaining; `summary` has what you changed and the verification result.
 - status "partial": part of the work is done and honest, and the rest needs something you cannot do here (for example a runtime probe that is not available). Do the part you can, tag the rest [hypothesis] in the notes, and say plainly in `summary` which "Done when" items are open. A partial result still goes to checks and review, and its PR closes the issue on merge, so `summary` must list what is left.
 - status "blocked": nothing useful can be delivered: something is missing, failing, or too large for one PR; `summary` says what.
 

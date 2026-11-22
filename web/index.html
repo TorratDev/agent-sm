@@ -129,6 +129,7 @@
   .f-chip.ok { background: var(--ok-soft); color: var(--ok); font-family: var(--mono); }
   .f-chip.bad { background: var(--bad-soft); color: var(--bad); font-family: var(--mono); }
   .f-chip.idle { font-family: var(--mono); }
+  .f-chip.cur { box-shadow: 0 0 0 2px var(--live); }
   .f-node { position: relative; z-index: 1; width: 24px; height: 24px; border-radius: 50%; background: var(--line); border: 5px solid var(--card); box-shadow: 0 0 0 2px var(--line); }
   .f-node.past { background: var(--card); box-shadow: 0 0 0 4px var(--live); border-color: var(--card); }
   .f-node.on { background: var(--live-soft); box-shadow: 0 0 0 4px var(--live), 0 0 0 9px color-mix(in srgb, var(--live) 25%, transparent); animation: glow 1.6s ease-in-out infinite; }
@@ -253,7 +254,7 @@
 
 <main>
   <section id="board">
-    <div class="head"><h2 id="boardTitle">Pipeline</h2><span class="note" id="boardNote">All runs on one line: who is at each station now, how many got past it (+N), and where a result sent runs back (↩ station ×N). Click a number to open that run.</span></div>
+    <div class="head"><h2 id="boardTitle">Pipeline</h2><label class="note" id="batchPick" hidden><input type="checkbox" id="onlyBatch"> Only the current batch (<span id="batchList"></span>)</label><span class="note" id="boardNote">All runs on one line: who is at each station now, how many got past it (+N), and where a result sent runs back (↩ station ×N). Click a number to open that run.</span></div>
     <div class="panel flow" id="flow"></div>
     <div class="grid" id="grid"></div>
     <div class="empty" id="empty" hidden></div>
@@ -328,7 +329,7 @@
 const TOKEN = "__TOKEN__";
 const BAD_OUT = new Set(["fail", "blocked", "invalid", "split", "escalate"]);
 const ERR_EXIT = new Set(["gave-up", "errored", "escalated"]);
-let STATIONS = [], LIMITS = {}, RUNS = [], QUEUE = {}, ISSUES = [], SEL = new Set();
+let STATIONS = [], LIMITS = {}, RUNS = [], QUEUE = {}, ISSUES = [], SEL = new Set(), BATCH = new Set();
 let VIEW = "pipeline", PICK = location.hash.slice(1);
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -408,6 +409,7 @@ function diagram(c) {
 function card(c) {
   const running = (QUEUE.running || []).some(j => String(j.issue) === String(c.issue));
   const acts = (running && QUEUE.can_run ? `<button class="btn danger" data-act="stop">Stop</button>` : "")
+    + (!running && (c.exit || c.stalled) ? `<button class="btn" data-act="dismiss" title="Move this run's folder to archive/ so the board forgets it">Dismiss</button>` : "")
     + (c.pr ? `<a class="btn primary" href="${esc(c.pr)}" target="_blank" rel="noopener">Open PR</a>` : "");
   return `<article class="card tone-${c.tone}${String(c.issue) === PICK ? " picked" : ""}" data-n="${esc(c.issue)}">
     <div class="c-top"><span class="c-n">#${esc(c.issue)}</span><span class="pill">${esc(c.status)}</span><span class="c-meta">${esc(c.meta)}</span></div>
@@ -438,7 +440,7 @@ function flow(all) {
   const reach = Math.max(-1, ...live.map(c => STATIONS.indexOf(c.live)));
   const queued = all.filter(c => c.queued);
   // shortcut: shows the first 12 issue numbers per station and "+k" for the rest; a station list would be next
-  const tags = (cs, cls, why) => cs.slice(0, 12).map(c => `<button class="f-chip ${cls}" data-n="${esc(c.issue)}" title="#${esc(c.issue)} ${esc(c.title || "")} · ${why}">#${esc(c.issue)}</button>`).join("")
+  const tags = (cs, cls, why) => cs.slice(0, 12).map(c => `<button class="f-chip ${cls}${BATCH.has(String(c.issue)) ? " cur" : ""}" data-n="${esc(c.issue)}" title="#${esc(c.issue)} ${esc(c.title || "")} · ${why}">#${esc(c.issue)}</button>`).join("")
     + (cs.length > 12 ? `<span class="f-chip ${cls}" title="${cs.slice(12).map(c => "#" + c.issue).join(" ")}">+${cs.length - 12}</span>` : "");
   const items = STATIONS.map((name, i) => {
     const on = live.filter(c => c.live === name);
@@ -460,9 +462,12 @@ function flow(all) {
 }
 
 function renderBoard() {
+  BATCH = new Set((QUEUE.batch || []).map(String));
+  $("batchPick").hidden = VIEW === "errors" || !BATCH.size;
+  $("batchList").textContent = [...BATCH].map(n => "#" + n).join(" ");
   const all = cardsData();
   $("flow").hidden = VIEW === "errors" || !STATIONS.length;
-  if (!$("flow").hidden) $("flow").innerHTML = flow(all);
+  if (!$("flow").hidden) $("flow").innerHTML = flow(all.filter(c => !$("onlyBatch").checked || !BATCH.size || BATCH.has(String(c.issue))));
   const errs = all.filter(c => ERR_EXIT.has(c.exit) || c.stalled);
   $("nRun").textContent = all.filter(c => c.live).length || "";
   $("nErr").textContent = errs.length || "";
@@ -664,11 +669,16 @@ $("grid").addEventListener("click", async e => {
     try { renderQueue(await post(withAgent("/api/stop"))); renderBoard(); } catch (err) { alert("cannot stop: " + err.message); }
     return;
   }
+  if (e.target.closest("[data-act=dismiss]")) {
+    try { await post("/api/dismiss?issue=" + encodeURIComponent(art.dataset.n)); if (PICK === art.dataset.n) pick(""); tick(); } catch (err) { alert("cannot dismiss: " + err.message); }
+    return;
+  }
   pick(art.dataset.n === PICK ? "" : art.dataset.n);
 });
 $("dclose").addEventListener("click", () => pick(""));
 $("flow").addEventListener("click", e => { const b = e.target.closest("button[data-n]"); if (b) { pick(b.dataset.n); $("detail").scrollIntoView({ block: "start" }); } });
 $("filter").addEventListener("input", renderIssues);
+$("onlyBatch").addEventListener("change", renderBoard);
 $("refresh").addEventListener("click", () => loadIssues(true));
 $("issueList").addEventListener("change", e => {
   const n = Number(e.target.dataset.n); if (!n) return;

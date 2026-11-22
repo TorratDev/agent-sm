@@ -110,6 +110,7 @@ func publish(c *Ctx) Out {
 		return Fail
 	}
 	pr := url[strings.LastIndex(url, "/")+1:]
+	c.PR = pr
 	logEvent(map[string]any{"event": "pr-opened", "url": url})
 	if settings.Management.Mode == "service" {
 		number, err := strconv.Atoi(pr)
@@ -183,7 +184,7 @@ func followUpBody(c *Ctx, reason string) string {
 }
 
 // followUp files the follow-up issue after a split, 3 REVISE rounds, or a partial delivery.
-// It needs SM_EPIC (the epic the follow-up joins) and a publish level.
+// It needs a publish level; SM_EPIC, when set, is named in the follow-up.
 func followUp(c *Ctx, exit Exit) {
 	reason := followUpReason(c, exit)
 	if settings.Management.Mode == "service" {
@@ -198,18 +199,28 @@ func followUp(c *Ctx, exit Exit) {
 	if c.Level == levelNone || reason == "" {
 		return
 	}
-	epic := os.Getenv("SM_EPIC")
-	if epic == "" {
-		logEvent(map[string]any{"event": "follow-up-skipped", "why": "set SM_EPIC to create it"})
-		// say it on the issue too, or a split run leaves no trace outside events.jsonl
+	work := followUpBody(c, reason)
+	body := fmt.Sprintf("%s\n\nReason for split: %s\n\nParent: #%d\nDependencies: #%d", work, reason, c.Issue, c.Issue)
+	if epic := os.Getenv("SM_EPIC"); epic != "" {
+		body += "\nEpic: #" + epic
+	}
+	if c.PR != "" {
+		body += fmt.Sprintf("\nCreated by: PR #%s, which delivers part of #%d", c.PR, c.Issue)
+	}
+	url, ok := gh(c, "issue", "create", "--title", c.Title+" (follow-up)", "--body", body, "--label", "follow-up")
+	if !ok { // e.g. no "follow-up" label: keep the remaining work on the issue, or it is lost
 		gh(c, "issue", "comment", strconv.Itoa(c.Issue), "--body", fmt.Sprintf(
-			"agent-sm ended (%s: %s) and filed no follow-up issue: SM_EPIC is not set.\n\n%s", exit, reason, followUpBody(c, reason)))
+			"agent-sm ended (%s: %s) and could not file a follow-up issue.\n\n%s", exit, reason, work))
 		return
 	}
-	body := fmt.Sprintf("%s\n\nReason for split: %s\n\nParent: #%d\nEpic: #%s\nDependencies: #%d",
-		followUpBody(c, reason), reason, c.Issue, epic, c.Issue)
-	if url, ok := gh(c, "issue", "create", "--title", c.Title+" (follow-up)", "--body", body, "--label", "follow-up"); ok {
-		logEvent(map[string]any{"event": "follow-up", "url": url})
+	logEvent(map[string]any{"event": "follow-up", "url": url})
+	num := url[strings.LastIndex(url, "/")+1:]
+	// a real sub-issue of the issue it came from, so that issue's sub-issue list shows what is left
+	if id, ok := gh(c, "api", "repos/{owner}/{repo}/issues/"+num, "--jq", ".id"); ok {
+		gh(c, "api", "-X", "POST", fmt.Sprintf("repos/{owner}/{repo}/issues/%d/sub_issues", c.Issue), "-F", "sub_issue_id="+id)
+	}
+	if c.PR != "" {
+		gh(c, "pr", "comment", c.PR, "--body", fmt.Sprintf("This PR delivers part of #%d. The remaining work is in #%s, a new sub-issue of #%d.", c.Issue, num, c.Issue))
 	}
 }
 

@@ -96,7 +96,7 @@ in place; delete it before running the issue again.
 | `SM_TRANSCRIPTS` | `true` | Local transcript saving for every provider (`true`/`false` or `1`/`0`), on by default while runs still error. A capture failure is logged and never fails the step. Independent of permission audit. |
 | `SM_GHIDRA_COPY` | `none` | Legacy-profile-only Ghidra project copy. |
 | `SM_EXPORT` | `~/rescue-re/export` | Legacy-profile-only export; generic runs do not inspect it. |
-| `SM_EPIC` | none | Epic that a follow-up issue joins (split, three failed fix rounds, or a partial delivery). Unset: the run comments on the issue instead. |
+| `SM_EPIC` | none | Epic named in a follow-up issue. A follow-up (split, three failed fix rounds, or a partial delivery) is filed with any publish level as a sub-issue of the issue it came from; after a partial PR it names that PR, and the PR gets a comment naming it. If filing fails, the run comments on the issue instead. |
 | `SM_LINKS` | none | Comma-separated gitignored files to symlink into a worktree (serve), added to the profile's `links`. |
 | `SM_STATS` | `$SM_SCRATCH_ROOT/stats.jsonl` | Where session stats are appended. |
 | `SM_SCRATCH_ROOT`, `SM_SCRATCH`, `SM_EVENTS` | `~/.local/state/agent-sm` (or `$XDG_STATE_HOME/agent-sm`), `<root>/<issue>`, `<scratch>/events.jsonl` | Where run data goes. |

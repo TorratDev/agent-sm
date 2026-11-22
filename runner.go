@@ -51,6 +51,7 @@ type Runner struct {
 	cmds              map[*Job]*exec.Cmd
 	stopped           map[*Job]bool
 	history           []Job
+	batch             []int // the issues started together: reset when a run is requested while nothing is queued or running
 	working           bool
 }
 
@@ -84,6 +85,14 @@ func (r *Runner) Enqueue(jobs []Job) {
 	if r.idle == nil {
 		r.idle = sync.NewCond(&r.mu)
 		r.cmds, r.stopped = map[*Job]*exec.Cmd{}, map[*Job]bool{}
+	}
+	if len(r.queue) == 0 && len(r.running) == 0 {
+		r.batch = nil
+	}
+	for _, j := range jobs {
+		if !slices.Contains(r.batch, j.Issue) {
+			r.batch = append(r.batch, j.Issue)
+		}
 	}
 	r.queue = append(r.queue, jobs...)
 	if !r.working {
@@ -459,5 +468,5 @@ func (r *Runner) Snapshot() map[string]any {
 	}
 	return map[string]any{"can_run": true, "repo": r.repo, "leftover": r.leftovers(), "provider": settings.Provider,
 		"models": agentModels(), "session_limit": settings.SessionLimit, "usage_unit": settings.unit(),
-		"running": running, "concurrency": r.slots.size(), "queued": append([]Job{}, r.queue...), "history": append([]Job{}, r.history...)}
+		"running": running, "concurrency": r.slots.size(), "queued": append([]Job{}, r.queue...), "history": append([]Job{}, r.history...), "batch": append([]int{}, r.batch...)}
 }

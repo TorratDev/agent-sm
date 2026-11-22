@@ -155,7 +155,7 @@ func init() { // not a composite literal at package level: the step functions re
 		Check: {Name: "check", Run: check, Outs: []Out{Pass, Fail}},
 		Review: {Name: "review", Run: review, Outs: []Out{Pass, Fail, Split, Escalate, Invalid, Timeout, OverBudget},
 			Role: "reviewer", Model: opus,
-			Schema: `{"type":"object","properties":{"verdict":{"enum":["PASS","REVISE","SPLIT","ESCALATE"]},"reasons":{"type":"array","items":{"type":"string"}}},"required":["verdict","reasons"],"additionalProperties":false}`,
+			Schema: `{"type":"object","properties":{"verdict":{"enum":["PASS","REVISE","SPLIT","ESCALATE"]},"reasons":{"type":"array","items":{"type":"string"}},"remaining":{"type":"array","items":{"type":"string"}}},"required":["verdict","reasons"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead + ",Bash(git diff:*),Bash(git log:*)"},
 		Publish: {Name: "publish", Run: publish, Outs: []Out{Ok, Blocked, Fail}},
 		Summarize: {Name: "summarize", Outs: []Out{Ok, Invalid, Timeout, OverBudget},
@@ -299,7 +299,8 @@ type Ctx struct {
 	Files           []string // plan -> check (scope gate), execute, review
 	Verification    string
 	Merged          bool   // publish merged the PR
-	Partial         bool   // the last execute said "partial": the run files a follow-up for the rest
+	PR              string // the PR number publish opened, for the follow-up note
+	Partial         bool   // the last execute said "partial", or the PASS review listed remaining work: the run files a follow-up
 	Units           []Unit // plan -> investigate: one session per unit, each sized for about 30 minutes
 	UnitIdx         int
 	Handoff         string // notes earlier units leave for later ones
@@ -1056,8 +1057,9 @@ func check(c *Ctx) Out {
 
 func review(c *Ctx) Out {
 	var r struct {
-		Verdict string
-		Reasons []string
+		Verdict   string
+		Reasons   []string
+		Remaining []string // on PASS: work the issue asked for that this PR leaves open
 	}
 	extra := taskText(c) + " Executor's summary: " + c.Summary + "\nFindings:\n" + c.Evidence +
 		"\nChecks: all passed. Their output (judge any WARN lines):\n" + c.CheckOut
@@ -1071,6 +1073,11 @@ func review(c *Ctx) Out {
 	c.Verdict = strings.Join(r.Reasons, "; ")
 	switch r.Verdict {
 	case "PASS":
+		// The executor may call it "done" while open items remain; the reviewer's list wins, so the rest gets a follow-up.
+		if len(r.Remaining) > 0 {
+			c.Partial = true
+			c.Feedback = "- " + strings.Join(r.Remaining, "\n- ")
+		}
 		return Pass
 	case "SPLIT":
 		return Split

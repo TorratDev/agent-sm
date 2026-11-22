@@ -271,6 +271,30 @@ func runDirs(root string) map[string]string {
 	return dirs
 }
 
+// dismissRun moves every run folder of issue n (CLI and page runs, all attempts) to
+// root/archive/<time>/, where runDirs does not look, so the board forgets it. Nothing is deleted.
+func dismissRun(root string, n int) error {
+	issue, dest := strconv.Itoa(n), filepath.Join(root, "archive", time.Now().Format("20060102-150405.000"))
+	dirs, _ := filepath.Glob(filepath.Join(root, "repos", "*", issue))
+	if fi, err := os.Stat(filepath.Join(root, issue)); err == nil && fi.IsDir() {
+		dirs = append(dirs, filepath.Join(root, issue))
+	}
+	if len(dirs) == 0 {
+		return fs.ErrNotExist
+	}
+	for _, d := range dirs {
+		rel, _ := filepath.Rel(root, d)
+		to := filepath.Join(dest, rel)
+		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+			return err
+		}
+		if err := os.Rename(d, to); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // stallAfter: a run with no exit and no file written for this long is shown as stalled
 // (a long silent step, or a process that died without logging its exit).
 const stallAfter = 10 * time.Minute
@@ -612,6 +636,26 @@ func serve(issue, addr, repo string) error {
 		snap := queueSnapshot(run, profile)
 		snap["notes"] = notes
 		json.NewEncoder(w).Encode(snap)
+	})
+	mux.HandleFunc("/api/dismiss", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(w, r) {
+			return
+		}
+		n, err := strconv.Atoi(r.URL.Query().Get("issue"))
+		d, ok := runDirs(root)[strconv.Itoa(n)]
+		if err != nil || n <= 0 || !ok {
+			http.Error(w, "no such run", http.StatusNotFound)
+			return
+		}
+		if rs, _ := readRun(d, time.Now()); rs.Exit == "" && !rs.Stalled {
+			http.Error(w, "run is still going; stop it first", http.StatusConflict)
+			return
+		}
+		if err := dismissRun(root, n); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("/api/stop", func(w http.ResponseWriter, r *http.Request) {
 		if authed(w, r) {
