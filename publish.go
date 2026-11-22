@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -242,11 +243,56 @@ var diagnosing sync.Map // run directories with an audit going, so a double clic
 
 // diagnoseRun runs the auditor on the finished run in dir (the page's Diagnose button) and
 // writes diagnosis.json there. It never runs on its own: the audit is a paid session.
-func diagnoseRun(dir, repo, exit string) (*Diagnosis, error) {
+// The audit runs in a child `agent-sm diagnose` with profile, as runs do, so it uses the run's
+// agent without touching the server's own settings that other requests read.
+func diagnoseRun(dir, repo, exit string, profile Profile) (*Diagnosis, error) {
 	if _, busy := diagnosing.LoadOrStore(dir, true); busy {
 		return nil, fmt.Errorf("a diagnosis of this run is already going")
 	}
 	defer diagnosing.Delete(dir)
+	self, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	b, err := json.Marshal(profile)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(runCtx, self, "diagnose", dir, repo, exit)
+	for _, e := range os.Environ() { // the audit must not write into the run's own events
+		if k, _, _ := strings.Cut(e, "="); k != "SM_RESOLVED_CONFIG" && k != "SM_EVENTS" && k != "SM_SCRATCH" {
+			cmd.Env = append(cmd.Env, e)
+		}
+	}
+	cmd.Env = append(cmd.Env, "SM_RESOLVED_CONFIG="+string(b))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("the auditor failed: %s", tail(string(out), 300))
+	}
+	var d Diagnosis
+	b, err = os.ReadFile(filepath.Join(dir, "diagnosis.json"))
+	if err == nil {
+		err = json.Unmarshal(b, &d)
+	}
+	return &d, err
+}
+
+// runProvider is the agent a run used, from the provider its events record; "" when none does.
+func runProvider(dir string) string {
+	b, _ := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+	provider := ""
+	for _, line := range strings.Split(string(b), "\n") {
+		var e struct {
+			Provider string `json:"provider"`
+		}
+		if json.Unmarshal([]byte(line), &e) == nil && e.Provider != "" {
+			provider = e.Provider
+		}
+	}
+	return provider
+}
+
+// auditRun is the `agent-sm diagnose` child: one auditor session with the profile it was given.
+func auditRun(dir, repo, exit string) (*Diagnosis, error) {
 	c := &Ctx{}
 	if b, err := os.ReadFile(filepath.Join(dir, "ctx.json")); err == nil {
 		json.Unmarshal(b, c)

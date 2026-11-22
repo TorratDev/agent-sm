@@ -17,3 +17,6 @@ func setProcessGroup(cmd *exec.Cmd) {
 func killProcessGroup(pid int, sig syscall.Signal) error {
 	return syscall.Kill(-pid, sig)
 }
+
+// agentCommand returns name and args unchanged: only Windows wraps agent CLIs in batch shims.
+func agentCommand(name string, args []string) (string, []string) { return name, args }

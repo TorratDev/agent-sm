@@ -415,10 +415,15 @@ func TestDiagnosis(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(`{"exit":"errored"}`+"\n"), 0o644)
 	// a second click while an audit runs starts no second session
 	diagnosing.Store(dir, true)
-	if _, err := diagnoseRun(dir, dir, "errored"); err == nil {
+	if _, err := diagnoseRun(dir, dir, "errored", settings); err == nil {
 		t.Fatal("a second audit of the same run started")
 	}
 	diagnosing.Delete(dir)
+	// the audit uses the agent the run recorded last, not the server's default
+	os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte("{\"provider\":\"copilot\"}\nnot json\n{\"exit\":\"errored\",\"provider\":\"claude\"}\n"), 0o644)
+	if p := runProvider(dir); p != "claude" {
+		t.Fatalf("runProvider = %q, want claude", p)
+	}
 	// a diagnosis on disk shows on the board, and one already filed is not filed again (no gh call)
 	os.WriteFile(filepath.Join(dir, "diagnosis.json"), []byte(`{"exit":"errored","kind":"bug","title":"t","cause":"c","fix":"f","body":"b","issue":"https://x/issues/3"}`), 0o644)
 	if rs, _ := readRun(dir, time.Now()); rs.Diagnosis == nil || rs.Diagnosis.Kind != "bug" {

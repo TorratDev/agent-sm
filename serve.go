@@ -689,7 +689,13 @@ func serve(issue, addr, repo string) error {
 		if exit == "" {
 			exit = "stalled"
 		}
-		diag, err := diagnoseRun(d, run.repo, exit)
+		// the run's own agent, not the server's default: the page may have run it on another one
+		profile, err := queuedProfile(runRequest{Repo: run.repo, Provider: runProvider(d)})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		diag, err := diagnoseRun(d, run.repo, exit, profile)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return

@@ -48,6 +48,7 @@ func agent(c *Ctx, state State, prompt string, out any) (result Out) {
 }
 
 func process(ctx context.Context, dir, name string, args ...string) *exec.Cmd {
+	name, args = agentCommand(name, args)
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	setProcessGroup(cmd)

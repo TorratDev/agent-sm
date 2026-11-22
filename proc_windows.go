@@ -4,8 +4,12 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -31,4 +35,31 @@ func killProcessGroup(pid int, sig syscall.Signal) error {
 		return fmt.Errorf("console break to group %d: %w", pid, errno)
 	}
 	return nil
+}
+
+// npmShimScript finds the script an npm .cmd shim hands to node: "%dp0%\node_modules\...\x.js".
+var npmShimScript = regexp.MustCompile(`"%dp0%\\([^"]+\.js)"`)
+
+// agentCommand runs an npm-installed CLI through node rather than its .cmd shim:
+// cmd.exe cuts a batch file's command line at the first newline, so a multi-line -p prompt
+// and every flag after it (session id, tool limits) would never reach the agent.
+func agentCommand(name string, args []string) (string, []string) {
+	path, err := exec.LookPath(name)
+	if err != nil || !strings.EqualFold(filepath.Ext(path), ".cmd") {
+		return name, args
+	}
+	shim, err := os.ReadFile(path)
+	if err != nil {
+		return name, args
+	}
+	m := npmShimScript.FindSubmatch(shim)
+	if m == nil {
+		return name, args
+	}
+	dir := filepath.Dir(path)
+	node := filepath.Join(dir, "node.exe") // the shim prefers a node beside it
+	if _, err := os.Stat(node); err != nil {
+		node = "node"
+	}
+	return node, append([]string{filepath.Join(dir, string(m[1]))}, args...)
 }

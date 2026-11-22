@@ -1232,6 +1232,13 @@ func main() {
 	var stop context.CancelFunc
 	runCtx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if len(args) == 4 && args[0] == "diagnose" { // agent-sm diagnose DIR REPO EXIT: the page's auditor, run by serve
+		if _, err := auditRun(args[1], args[2], args[3]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(args) > 0 && args[0] == "issues" {
 		if err := issuesCLI(runCtx, args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
