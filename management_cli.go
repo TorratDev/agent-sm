@@ -99,7 +99,7 @@ func pendingFollowUp(c *Ctx, exit Exit) error {
 	if plan == nil {
 		reason := followUpReason(c, exit)
 		plan = &WorkPlan{ID: "follow-up-" + strconv.Itoa(c.Issue), Items: []WorkItem{{
-			ID: "follow-up", Kind: "story", Title: c.Title + " (follow-up)",
+			ID: "follow-up", Kind: "story", Title: c.Title,
 			Body: fmt.Sprintf("Source: %s\n\n%s\n\nReason: %s", c.IssueURL, followUpBody(c, reason), reason),
 		}}}
 	}

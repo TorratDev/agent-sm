@@ -102,7 +102,7 @@ For each sub-issue in the batch:
    - ESCALATE: ask the user.
 5. When epic-status says "split" (3 REVISE), or the work doesn't fit one PR, create a follow-up:
    Write the body (done so far, remaining work, reason for split, then "Parent: #<n>", "Epic: #<FOLLOWUP_EPIC>", "Dependencies: <list>") to a scratch file outside the repo, then:
-   scripts/gh-issue.sh --title "<title> (follow-up)" --body-file <file> --label follow-up --parent <FOLLOWUP_EPIC> --blocked-by <each open dependency>
+   scripts/gh-issue.sh --title "<title>" --body-file <file> --label follow-up --parent <FOLLOWUP_EPIC> --blocked-by <each open dependency>
    Create every issue with scripts/gh-issue.sh, never bare gh issue create: it also sets the assignee, the sub-issue link and the blocked-by links. If it exits 1, rerun it with --issue <number> and the links it reported as failed.
    <FOLLOWUP_EPIC> is the current epic (#<EPIC>) unless the follow-up's Dependencies list names an issue outside the current epic. Only then, create a new epic for it first: scripts/gh-issue.sh --title "<title> epic" --body-file <file: "Epic: #<EPIC> split. Original sub-issue: #<n>" and "Dependencies: <full dependency list>"> --label epic --parent <EPIC> --blocked-by <each open dependency>, then use its number as <FOLLOWUP_EPIC>.
    If the part already done is still worth merging, first change the PR's link to "Refs #<n>" (gh pr edit <PR> --body "..."), then take it through review and merge as usual.

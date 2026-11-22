@@ -207,7 +207,7 @@ func followUp(c *Ctx, exit Exit) {
 	if c.PR != "" {
 		body += fmt.Sprintf("\nCreated by: PR #%s, which delivers part of #%d", c.PR, c.Issue)
 	}
-	url, ok := gh(c, "issue", "create", "--title", c.Title+" (follow-up)", "--body", body, "--label", "follow-up")
+	url, ok := gh(c, "issue", "create", "--title", c.Title, "--body", body, "--label", "follow-up")
 	if !ok { // e.g. no "follow-up" label: keep the remaining work on the issue, or it is lost
 		gh(c, "issue", "comment", strconv.Itoa(c.Issue), "--body", fmt.Sprintf(
 			"agent-sm ended (%s: %s) and could not file a follow-up issue.\n\n%s", exit, reason, work))
