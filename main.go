@@ -97,7 +97,7 @@ const (
 	Ready     Exit = "ready"     // branch is local, checks pass, reviewer said PASS
 	GaveUp    Exit = "gave-up"   // blocked, too many fix rounds, a timed-out session, or the budget is spent
 	Errored   Exit = "errored"   // setup failed or agent output stayed invalid
-	SplitExit Exit = "split"     // needs a follow-up issue
+	SplitExit Exit = "split"     // too large: the issue gets a comment asking for sub-issues
 	Escalated Exit = "escalated" // a human must decide
 	Stopped   Exit = "stopped"   // SIGINT or SIGTERM
 )
@@ -306,7 +306,7 @@ type Ctx struct {
 	Verification    string
 	Merged          bool   // publish merged the PR
 	PR              string // the PR number publish opened, for the follow-up note
-	Partial         bool   // the last execute said "partial", or the PASS review listed remaining work: the run files a follow-up
+	Partial         bool   // the last execute said "partial"; the PASS review then sets it from its remaining list, and the run files a follow-up when true
 	Units           []Unit // plan -> investigate: one session per unit, each sized for about 30 minutes
 	UnitIdx         int
 	Handoff         string // notes earlier units leave for later ones
@@ -841,6 +841,10 @@ func plan(c *Ctx) Out {
 	case r.Status == "blocked":
 		return Blocked
 	case !r.FitsOnePR:
+		c.Feedback = "Planner's breakdown:\n- " + strings.Join(r.Points, "\n- ") // the split comment's remaining work
+		for _, u := range r.Units {
+			c.Feedback += "\n- unit " + u.ID + ": " + u.Title
+		}
 		return Split
 	case !r.NeedsInvestigation:
 		return Direct
@@ -1079,9 +1083,9 @@ func review(c *Ctx) Out {
 	c.Verdict = strings.Join(r.Reasons, "; ")
 	switch r.Verdict {
 	case "PASS":
-		// The executor may call it "done" while open items remain; the reviewer's list wins, so the rest gets a follow-up.
-		if len(r.Remaining) > 0 {
-			c.Partial = true
+		// The reviewer's list wins either way: open items after a "done" get a follow-up, and a "partial" with nothing listed gets none.
+		c.Partial = len(r.Remaining) > 0
+		if c.Partial {
 			c.Feedback = "- " + strings.Join(r.Remaining, "\n- ")
 		}
 		return Pass

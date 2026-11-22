@@ -186,7 +186,7 @@ func followUpBody(c *Ctx, reason string) string {
 	return r.Body
 }
 
-// followUp files the follow-up issue after a split, 3 REVISE rounds, or a partial delivery.
+// followUp files the follow-up issue after 3 REVISE rounds or a partial delivery, and comments a split's breakdown on the issue.
 // It needs a publish level; SM_EPIC, when set, is named in the follow-up.
 func followUp(c *Ctx, exit Exit) {
 	reason := followUpReason(c, exit)
@@ -203,6 +203,12 @@ func followUp(c *Ctx, exit Exit) {
 		return
 	}
 	work := followUpBody(c, reason)
+	if exit == SplitExit { // no PR, so the issue stays open: a copy of it would only split the same way again
+		gh(c, "issue", "comment", strconv.Itoa(c.Issue), "--body", fmt.Sprintf(
+			"agent-sm stopped: %s. Split this issue into sub-issues; agent-sm runs them in its place.\n\n%s", reason, work))
+		logEvent(map[string]any{"event": "split-comment", "issue": c.Issue})
+		return
+	}
 	body := fmt.Sprintf("%s\n\nReason for split: %s\n\nParent: #%d\nDependencies: #%d", work, reason, c.Issue, c.Issue)
 	if epic := os.Getenv("SM_EPIC"); epic != "" {
 		body += "\nEpic: #" + epic

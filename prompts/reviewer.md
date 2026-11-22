@@ -16,7 +16,7 @@ Check, in order:
 Run every check before you decide; do not stop at the first failure.
 
 Your result is the typed output, not a message to anyone:
-- verdict PASS: you would merge it; `reasons` has one line on why. `remaining` lists every item the issue asked for that this PR leaves open (from the summary's "not done", "remaining" or "open" items, or what you found missing), one line each, specific enough to become a follow-up issue; the program files that follow-up. Empty when the issue is fully done.
+- verdict PASS: you would merge it; `reasons` has one line on why. `remaining` lists every item the issue asked for that this PR leaves open (from the summary's "not done", "remaining" or "open" items, or what you found missing), one line each, specific enough to become a follow-up issue; the program files that follow-up. Only work the issue's text asks for counts: leave out new questions, hypotheses to confirm later, extra checks and nice-to-haves that came up during the work, and anything already tracked in another issue. Empty when the issue is fully done, and when only such items are open.
 - Other verdicts: `remaining` is empty.
 - verdict REVISE: `reasons` is the numbered list of every change required, each specific enough to act on without your context. The executor gets exactly this text.
 - verdict SPLIT: `reasons` names the part to move into a follow-up issue.

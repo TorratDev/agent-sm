@@ -376,6 +376,23 @@ esac
 	}
 }
 
+func TestSplitCommentsOnTheIssueInsteadOfFilingACopy(t *testing.T) {
+	useProfile(t, defaultProfile("copilot"))
+	dir := t.TempDir()
+	log := filepath.Join(dir, "gh.log")
+	writeFile(t, filepath.Join(dir, "gh"), `#!/bin/sh
+printf '%s|' "$@" >> "`+log+`"; echo >> "`+log+`"
+`, 0o755)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	c := &Ctx{Repo: dir, Scratch: dir, Issue: 5, Title: "t", Level: levelPR, Feedback: "Planner's breakdown:\n- piece one", RunBudget: 1, CostUnknown: 1}
+	followUp(c, SplitExit)
+	b, _ := os.ReadFile(log)
+	got := string(b)
+	if strings.Contains(got, "issue|create") || !strings.Contains(got, "issue|comment|5|") || !strings.Contains(got, "piece one") {
+		t.Fatalf("a split must comment its breakdown on #5 and file nothing:\n%s", got)
+	}
+}
+
 func TestPassReviewWithRemainingWorkMarksPartial(t *testing.T) {
 	dir, scratch := t.TempDir(), t.TempDir()
 	writeFile(t, filepath.Join(dir, "opencode"), "#!/bin/sh\nprintf '%s' \"$SM_TEST_STDOUT\"\n", 0o755)
@@ -397,7 +414,7 @@ func TestPassReviewWithRemainingWorkMarksPartial(t *testing.T) {
 		{`{"verdict":"PASS","reasons":["ok"]}`, false},
 	} {
 		t.Setenv("SM_TEST_STDOUT", opencodeOutput(t, tc.result, &cost))
-		c := &Ctx{Repo: dir, Scratch: scratch, RunBudget: 5}
+		c := &Ctx{Repo: dir, Scratch: scratch, RunBudget: 5, Partial: true} // the executor said "partial": the review's list decides
 		if got := review(c); got != Pass {
 			t.Fatalf("%s: review = %v", tc.result, got)
 		}
