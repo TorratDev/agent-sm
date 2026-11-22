@@ -676,7 +676,7 @@ func serve(issue, addr, repo string) error {
 			return
 		}
 		rs, _ := readRun(d, time.Now())
-		if rs.Exit == "" && !rs.Stalled || rs.Exit == string(Ready) {
+		if rs.Exit == "" && !rs.Stalled || rs.Exit == string(Ready) || rs.Exit == string(SplitExit) {
 			http.Error(w, "only a finished, failed run can be diagnosed", http.StatusConflict)
 			return
 		}

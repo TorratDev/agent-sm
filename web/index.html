@@ -348,6 +348,8 @@
 const TOKEN = "__TOKEN__";
 const BAD_OUT = new Set(["fail", "blocked", "invalid", "split", "escalate"]);
 const ERR_EXIT = new Set(["gave-up", "errored", "escalated"]);
+// split is not an error: the run ended with work left for a follow-up. The stored exit stays "split"; the UI says "more work".
+const EXIT_LABEL = { split: "more work" };
 let DIAGNOSING = new Set(); // runs whose audit is going
 let STATIONS = [], LIMITS = {}, RUNS = [], QUEUE = {}, ISSUES = [], SEL = new Set(), BATCH = new Set();
 let VIEW = "pipeline", PICK = location.hash.slice(1);
@@ -367,7 +369,7 @@ function derive(r) {
   let far = -1;
   STATIONS.forEach((s, i) => { if (visits[s] || live === s) far = i; });
   const lastStep = r.steps[r.steps.length - 1];
-  const failAt = r.exit && r.exit !== "ready" && lastStep ? lastStep.state : null;
+  const failAt = r.exit && r.exit !== "ready" && r.exit !== "split" && lastStep ? lastStep.state : null;
   const stations = STATIONS.map((name, i) => {
     const count = (visits[name] || 0) + (live === name ? 1 : 0), lim = LIMITS[name];
     const st = live === name ? "live" : name === failAt ? "fail"
@@ -389,7 +391,7 @@ function derive(r) {
     const used = (visits[b.to] || 0) + (live === b.to ? 1 : 0), lim = LIMITS[b.to];
     return { ...b, attempt: lim ? `attempt ${used} of ${lim}` : "" };
   });
-  const status = r.queued ? "queued" : r.stalled ? "stalled" : r.exit || live || "starting";
+  const status = r.queued ? "queued" : r.stalled ? "stalled" : EXIT_LABEL[r.exit] || r.exit || live || "starting";
   const tone = r.queued ? "idle" : r.stalled || r.exit === "split" ? "warn" : r.exit === "ready" ? "good" : r.exit ? "bad" : "run";
   const reason = r.exit === "escalated" || r.exit === "split" ? r.verdict || r.feedback
     : r.exit && r.exit !== "ready" ? r.feedback || r.verdict : !r.exit && backs.length ? r.feedback : "";
@@ -431,7 +433,7 @@ function card(c) {
   const acts = (running && QUEUE.can_run ? `<button class="btn danger" data-act="stop">Stop</button>` : "")
     + (!running && (c.exit || c.stalled) ? `<button class="btn" data-act="dismiss" title="Move this run's folder to archive/ so the board forgets it">Dismiss</button>` : "")
     + (c.diagnosis ? `<button class="btn" data-act="diagnosis" title="Why this run failed, from its logs">Diagnosis</button>`
-      : !running && ((c.exit && c.exit !== "ready") || c.stalled) ? `<button class="btn" data-act="diagnose" title="Run an audit agent over this run's logs (one paid session, a few minutes)"${DIAGNOSING.has(String(c.issue)) ? " disabled>Diagnosing…" : ">Diagnose"}</button>` : "")
+      : !running && ((c.exit && c.exit !== "ready" && c.exit !== "split") || c.stalled) ? `<button class="btn" data-act="diagnose" title="Run an audit agent over this run's logs (one paid session, a few minutes)"${DIAGNOSING.has(String(c.issue)) ? " disabled>Diagnosing…" : ">Diagnose"}</button>` : "")
     + (c.pr ? `<a class="btn primary" href="${esc(c.pr)}" target="_blank" rel="noopener">Open PR</a>` : "");
   return `<article class="card tone-${c.tone}${String(c.issue) === PICK ? " picked" : ""}" data-n="${esc(c.issue)}">
     <div class="c-top"><span class="c-n">#${esc(c.issue)}</span><span class="pill">${esc(c.status)}</span><span class="c-meta">${esc(c.meta)}</span></div>
