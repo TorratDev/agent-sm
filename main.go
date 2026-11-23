@@ -444,7 +444,8 @@ func claudeAgent(c *Ctx, state State, prompt string, out any, transcript *agentT
 		budget = min(budget, c.RunBudget-c.Cost)
 	}
 	allow := configuredAllow(state)
-	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose", "--json-schema", step.Schema,
+	// The prompt goes on stdin: as an argument it can exceed Windows' ~32K command-line limit.
+	args := []string{"-p", "--output-format", "stream-json", "--verbose", "--json-schema", step.Schema,
 		"--no-session-persistence", "--allowedTools", allow, "--max-budget-usd", strconv.FormatFloat(budget, 'f', 4, 64),
 		"--append-system-prompt", rolePrompt(state)}
 	if model := stepModel(step); model != "" {
@@ -489,6 +490,7 @@ func claudeAgent(c *Ctx, state State, prompt string, out any, transcript *agentT
 	}
 	cmd := process(ctx, c.Repo, "claude", args...)
 	cmd.Env = cleanAgentEnv()
+	cmd.Stdin = strings.NewReader(prompt)
 	diagnostics := &boundedOutput{limit: 64 << 10}
 	cmd.Stderr = diagnostics
 	if transcript != nil {
