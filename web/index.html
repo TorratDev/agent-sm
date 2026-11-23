@@ -214,6 +214,7 @@
   .tag.lbl { background: color-mix(in srgb, var(--c) 18%, transparent); border-color: color-mix(in srgb, var(--c) 45%, transparent); color: color-mix(in srgb, var(--c) 60%, var(--ink)); }
   .tag.subs { background: var(--soft); color: var(--mute); }
   .tag.blk { background: var(--warn-soft); color: var(--warn); }
+  .tag.pr { background: var(--live-soft); color: var(--live); }
   .issues .none { padding: 28px; text-align: center; color: var(--mute); }
   label.check { display: inline-flex; gap: 6px; align-items: center; }
   .runbar .go { margin-left: auto; padding: 8px 18px; }
@@ -596,7 +597,7 @@ function renderIssues() {
   const hex = c => /^[0-9a-f]{6}$/i.test(c) ? "#" + c : "#8a93a6";
   $("issueList").innerHTML = rows.map(i => `<li><label class="issue${SEL.has(i.number) ? " on" : ""}">
     <input type="checkbox" data-n="${i.number}" ${SEL.has(i.number) ? "checked" : ""}><span class="inum">#${i.number}</span><span class="ititle">${esc(i.title)}</span>
-    ${i.labels.length || i.subs || i.blocked ? `<span class="imeta">${i.labels.map(l => `<span class="tag lbl" style="--c:${hex(l.color)}">${esc(l.name)}</span>`).join("")}${i.subs ? `<span class="tag subs">${i.subsDone}/${i.subs} sub-issues</span>` : ""}${i.blocked ? `<span class="tag blk">blocked by ${i.blocked}</span>` : ""}</span>` : ""}
+    ${i.labels.length || i.subs || i.blocked || i.pr ? `<span class="imeta">${i.labels.map(l => `<span class="tag lbl" style="--c:${hex(l.color)}">${esc(l.name)}</span>`).join("")}${i.subs ? `<span class="tag subs">${i.subsDone}/${i.subs} sub-issues</span>` : ""}${i.blocked ? `<span class="tag blk">blocked by ${i.blocked}</span>` : ""}${i.pr ? `<span class="tag pr" title="${esc(i.pr.url)}">PR #${i.pr.number} open</span>` : ""}</span>` : ""}
   </label></li>`).join("")
     || `<li class="none">${!SHOWN ? "Choose a repository first." : ISSUES.length ? "No issue matches the filter." : "This repository has no open issues."}</li>`;
   const shownAll = rows.length && rows.every(i => SEL.has(i.number));

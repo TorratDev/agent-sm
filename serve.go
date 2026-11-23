@@ -565,6 +565,18 @@ func serve(issue, addr, repo string) error {
 				http.Error(w, "listing issues failed: "+tail(out, 300), http.StatusBadGateway)
 				return
 			}
+			var issues []map[string]any
+			if json.Unmarshal([]byte(out), &issues) == nil {
+				prs := issuePRs(run.repo)
+				for _, i := range issues {
+					if n, ok := i["number"].(float64); ok && prs[int(n)].URL != "" {
+						i["pr"] = prs[int(n)]
+					}
+				}
+				if b, err := json.Marshal(issues); err == nil {
+					out = string(b)
+				}
+			}
 			cached = struct {
 				data string
 				at   time.Time
