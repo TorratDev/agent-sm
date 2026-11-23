@@ -64,8 +64,10 @@ func publish(c *Ctx) Out {
 	n := strconv.Itoa(c.Issue)
 	branch := c.Branch
 	if _, clean := sh(c.Repo, "git", "diff", "--cached", "--quiet"); clean == nil {
-		logEvent(map[string]any{"event": "publish-error", "err": "nothing staged"})
-		return Fail
+		// The reviewer passed an empty diff, e.g. the work is already merged: nothing to deliver.
+		// Blocked, not Fail, so the run ends gave-up with the evidence posted, not errored.
+		logEvent(map[string]any{"event": "publish", "stop": "nothing staged: no change to deliver"})
+		return Blocked
 	}
 	author, footer := attribution()
 	msg := fmt.Sprintf("%s (#%d)\n\nCo-authored-by: %s", c.Title, c.Issue, author)
