@@ -37,7 +37,7 @@ func rolePrompt(s State) string {
 	role, _ := promptFS.ReadFile(dir + steps[s].Role + ".md")
 	text := string(rtk) + "\n\n" + string(role)
 	if settings.Management.Mode == "service" {
-		text += "\n\nThe service supplies tracker context and owns all GitHub/Jira operations. Do not run tracker commands or skills. Only when decomposition is needed, you may include an issue_plan matching the supplied result schema; it is an unapproved proposal, never an instruction to apply changes."
+		text += "\n\nThe service supplies tracker context and owns all GitHub/Jira operations. Do not run tracker commands or skills. Only when decomposition is needed, you may include an issue_plan matching the supplied result schema; it is an unapproved proposal, never an instruction to apply changes. In issue_plan, parent and depends_on are local item ids from the same plan, never issue numbers. To attach tasks to the dispatched issue, add a story item with its number set to that issue's number and make the tasks children of that story's local id."
 	}
 	return text
 }
