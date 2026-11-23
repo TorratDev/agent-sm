@@ -382,6 +382,9 @@ func fileDiagnosis(dir, repo string, issue int) (string, error) {
 		return d.Issue, nil
 	}
 	body := fmt.Sprintf("%s\n\nFound by the agent-sm auditor in the failed run of #%d (exit: %s).", d.Body, issue, d.Exit)
+	if events, _ := os.ReadFile(filepath.Join(dir, "events.jsonl")); d.Kind == "bug" && strings.Contains(string(events), baseFails+`"`) {
+		body += "\n\n" + fixesBaseMarker
+	}
 	if dup := duplicateIssue(repo, d.Kind, d.Title, d.Body); dup != "" { // the board links the issue that already has it
 		if out, err := sh(repo, "gh", "issue", "comment", dup, "--body", body); err != nil {
 			return "", fmt.Errorf("gh issue comment: %s", tail(out, 300))
@@ -410,40 +413,11 @@ func fileDiagnosis(dir, repo string, issue int) (string, error) {
 }
 
 // fixesBaseMarker in an issue body skips the base check in prepare: that issue is the fix.
+// A bug filed from the diagnosis of a run that stopped on its base gets it, so that bug can run.
 const fixesBaseMarker = "agent-sm: fixes-base"
 
-// baseBug files (or reuses) one bug issue for a base that fails its checks, and links the
-// blocked issue to it, so the break gets fixed by an issue allowed to touch that code.
-func baseBug(c *Ctx, failed string) {
-	if c.Level == levelNone {
-		return
-	}
-	if settings.Management.Mode == "service" { // service mode creates tracker issues only through its journal
-		logEvent(map[string]any{"event": "base-bug-skipped", "why": "management service mode files issues itself"})
-		return
-	}
-	first, _, _ := strings.Cut(failed, "\n")
-	title := "Base " + c.Base + " " + first // e.g. "Base origin/main check failed: cargo clippy ..."
-	url, ok := gh(c, "issue", "list", "--state", "open", "--search", strconv.Quote(title)+" in:title", "--json", "url,title",
-		"--jq", "map(select(.title == "+strconv.Quote(title)+"))[0].url // empty")
-	if !ok {
-		return
-	}
-	if url != "" {
-		gh(c, "issue", "comment", url, "--body", fmt.Sprintf("Also blocks #%d.", c.Issue))
-	} else {
-		body := fmt.Sprintf("The checks fail on `%s` before any change, so agent-sm stops every issue run on this base.\n\nBlocks: #%d\n\n```\n%s\n```\n\n%s\n",
-			c.Base, c.Issue, tail(failed, 6000), fixesBaseMarker)
-		if url, ok = gh(c, "issue", "create", "--title", title, "--body", body, "--label", "bug"); !ok { // the repo may have no bug label
-			url, ok = gh(c, "issue", "create", "--title", title, "--body", body)
-		}
-		if !ok {
-			return
-		}
-	}
-	logEvent(map[string]any{"event": "base-bug", "url": url})
-	gh(c, "issue", "comment", strconv.Itoa(c.Issue), "--body", "Blocked: the base fails its checks before any change. Tracked in "+url+".")
-}
+// baseFails ends the prepare error of a base whose checks fail before any change.
+const baseFails = " fails its checks before any change"
 
 // stopGhidra ends any bridge on the run's project copy (the old end-of-epic check).
 func stopGhidra(c *Ctx) {

@@ -1070,7 +1070,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestPrepareStopsOnBrokenBaseAndFilesOneBug(t *testing.T) {
+func TestPrepareStopsOnBrokenBaseAndFilesNothing(t *testing.T) {
 	dir := t.TempDir()
 	repo := filepath.Join(dir, "repo")
 	if err := os.Mkdir(repo, 0o755); err != nil {
@@ -1111,14 +1111,23 @@ esac
 		b, _ := os.ReadFile(calls)
 		return o, string(b)
 	}
+	runDir := t.TempDir()
+	savedEvents := eventsPath
+	eventsPath = filepath.Join(runDir, "events.jsonl")
 	o, got := run("only docs", "")
-	if o != Fail || !strings.Contains(got, "issue create --title Base main check failed: echo E0034 duplicate; false") ||
-		!strings.Contains(got, "Blocks: #5") || !strings.Contains(got, "issue comment 5 --body Blocked") {
-		t.Fatalf("broken base: %v\n%s", o, got)
+	eventsPath = savedEvents
+	if o != Fail || strings.Contains(got, "issue create") || strings.Contains(got, "issue comment") {
+		t.Fatalf("a broken base must stop the run and file nothing: %v\n%s", o, got)
 	}
-	if o, got = run("only docs", "https://example/issues/9"); o != Fail || strings.Contains(got, "issue create") ||
-		!strings.Contains(got, "issue comment https://example/issues/9 --body Also blocks #5.") {
-		t.Fatalf("second blocked issue must reuse the bug: %v\n%s", o, got)
+	// filing that run's diagnosis is the user's call; the bug it files may skip the base check
+	t.Setenv("OPENCODE_API_KEY", "")
+	os.WriteFile(filepath.Join(runDir, "diagnosis.json"), []byte(`{"exit":"errored","kind":"bug","title":"fmt fails on main","body":"b"}`), 0o644)
+	os.Remove(calls)
+	if url, err := fileDiagnosis(runDir, repo, 5); err != nil || url != "https://example/issues/9" {
+		t.Fatalf("fileDiagnosis = %q, %v", url, err)
+	}
+	if b, _ := os.ReadFile(calls); !strings.Contains(string(b), fixesBaseMarker) {
+		t.Fatalf("a base bug filed from a diagnosis needs %q:\n%s", fixesBaseMarker, b)
 	}
 	if o, got = run("fix it\\n"+fixesBaseMarker, ""); o != Ok || strings.Contains(got, "issue create") {
 		t.Fatalf("the bug's own run must skip the base check: %v\n%s", o, got)
@@ -1130,7 +1139,7 @@ esac
 	o, got = run("only docs", "")
 	runCtx = saved
 	if o != Fail || strings.Contains(got, "issue create") || strings.Contains(got, "issue comment") {
-		t.Fatalf("a check that never ran must not file a base bug: %v\n%s", o, got)
+		t.Fatalf("a check that never ran must not file anything: %v\n%s", o, got)
 	}
 	ran := filepath.Join(dir, "check-ran")
 	settings.Checks = []string{"echo x >> " + ran}
