@@ -47,7 +47,6 @@ const minCopilotCredits = 100
 const maxConcurrency = 16
 const opencodeDefaultModel = "opencode/deepseek-v4.1-flash-free"
 const opencodeDecisionModel = "opencode/glm-5.3-flash"
-const opencodeJevModel = "opencode/jev-1.13-free"
 
 func finiteNonnegative(n float64) bool {
 	return !math.IsNaN(n) && !math.IsInf(n, 0) && n >= 0

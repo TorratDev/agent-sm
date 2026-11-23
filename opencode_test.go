@@ -106,21 +106,22 @@ func TestOpencodeModelOptions(t *testing.T) {
 	t.Cleanup(func() { opencodeCatalog.models, opencodeCatalog.at = oldModels, oldAt })
 	opencodeCatalog.models, opencodeCatalog.at = nil, time.Time{}
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "opencode"), "#!/bin/sh\n[ \"$1\" = models ] || exit 2\nprintf 'opencode/other\\nopencode/jev-1.13-free\\n'\n", 0o755)
+	writeFile(t, filepath.Join(dir, "opencode"), "#!/bin/sh\n[ \"$1\" = models ] || exit 2\nprintf 'opencode/other\\nopencode/jev-1.13-free\\nopencode/glm-5.3-flash\\n'\n", 0o755)
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	got := modelOptions("opencode")
 	if !slices.Contains(got, opencodeDefaultModel) || !slices.Contains(got, opencodeDecisionModel) ||
-		!slices.Contains(got, "opencode/other") || !slices.Contains(got, opencodeJevModel) {
+		!slices.Contains(got, "opencode/other") {
 		t.Fatalf("OpenCode options = %v", got)
 	}
-	if model := opencodeModelFor(steps[Plan]); model != opencodeJevModel {
-		t.Fatalf("decision model = %q, want %q", model, opencodeJevModel)
+	// Jev is a decision model, not an agent: plan skips it even when it is listed.
+	if model := opencodeModelFor(steps[Plan]); model != opencodeDecisionModel {
+		t.Fatalf("decision model = %q, want %q", model, opencodeDecisionModel)
 	}
 	if model := opencodeModelFor(steps[Execute]); model != opencodeDefaultModel {
 		t.Fatalf("working model = %q, want %q", model, opencodeDefaultModel)
 	}
 
-	// Without jev, decision steps use OpenCode's GLM Flash when it is installed.
+	// Review also uses OpenCode's GLM Flash when it is installed.
 	opencodeCatalog.models, opencodeCatalog.at = nil, time.Time{}
 	writeFile(t, filepath.Join(dir, "opencode"), "#!/bin/sh\n[ \"$1\" = models ] || exit 2\nprintf 'opencode/glm-5.3-flash\n'\n", 0o755)
 	if model := opencodeModelFor(steps[Review]); model != opencodeDecisionModel {
