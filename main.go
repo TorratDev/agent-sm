@@ -742,7 +742,8 @@ func prepare(c *Ctx) Out {
 	}
 	logEvent(map[string]any{"event": "branch", "branch": c.Branch, "base": c.Base})
 	// A base that already fails the checks would make every fix round fail on errors the issue
-	// may not touch, so stop here and file one bug for it. The bug's own run skips this test.
+	// may not touch, so stop here. Nothing is filed: Diagnose on the run proposes the bug, and filing
+	// it is the user's call (the check has failed falsely before). That bug's own run skips this test.
 	if len(settings.Checks) > 0 && !strings.Contains(c.Body, fixesBaseMarker) {
 		passed := basePassedFile(c.Repo)
 		if _, err := os.Stat(passed); passed != "" && err == nil {
@@ -750,12 +751,11 @@ func prepare(c *Ctx) Out {
 		} else if !checkList(c, baseChecks(), baseReports()) {
 			failed := c.Feedback
 			c.Feedback, c.CheckOut = "", ""
-			if strings.HasPrefix(failed, checkNotRun) { // the base was never judged: filing a bug would blame a clean main
-				logEvent(map[string]any{"event": "prepare", "err": "base check could not run", "out": tail(failed, 2000)})
-				return Fail
+			why := "base " + c.Base + baseFails
+			if strings.HasPrefix(failed, checkNotRun) { // the base was never judged
+				why = "base check could not run"
 			}
-			logEvent(map[string]any{"event": "prepare", "err": "base " + c.Base + " fails its checks before any change", "out": tail(failed, 2000)})
-			baseBug(c, failed)
+			logEvent(map[string]any{"event": "prepare", "err": why, "out": tail(failed, 2000)})
 			return Fail
 		} else if passed != "" {
 			os.MkdirAll(filepath.Dir(passed), 0o755)

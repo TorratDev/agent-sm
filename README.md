@@ -12,10 +12,11 @@ Exits: `ready`, `gave-up`, `errored`, `split`, `escalated`, `stopped`. A blocked
 Prepare and publish also give up when the issue is already closed or another attempt's PR for it is open.
 
 `prepare` runs the checks on the untouched base first. If they already fail, the run stops as `errored`
-before any agent starts, since no fix round of an issue that may not touch that code could pass. With a
-publish level (not in service mode), it also files one `bug` issue titled `Base <base> check failed: <command>`
-(or comments on the open one with that title) and links the blocked issue to it. That bug's body contains
-`agent-sm: fixes-base`, which skips the base check; add the line to any issue meant to repair the base.
+before any agent starts, since no fix round of an issue that may not touch that code could pass. It files
+nothing, since the check has failed falsely before: run Diagnose on that run and file its bug if you agree.
+A bug filed that way gets `agent-sm: fixes-base` in its body, which skips the base check; add the line to
+any issue meant to repair the base. A check that never ran to an exit status (it could not start, or the
+run was cancelled) is logged as `base check could not run`.
 A profile's `base_checks` replaces the full list for this step; the Rust profile runs only `fmt` and `clippy`
 there, since `cargo test` on the base took about 7 minutes. A base that passed is remembered by its tree and check list under `$SM_SCRATCH_ROOT/base-passed/`, so later
 runs on the same base skip the check (delete that directory to force it). `serve` also gives each repository
