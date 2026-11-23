@@ -84,7 +84,7 @@ func publish(c *Ctx) Out {
 		}
 	}
 	before, _ := git(c, "rev-parse", "HEAD")
-	if _, ok := git(c, "rebase", base); !ok {
+	if _, ok := git(c, "rebase", base); !ok && !resolveConflicts(c) {
 		git(c, "rebase", "--abort")
 		return Fail
 	}
@@ -159,6 +159,39 @@ func publish(c *Ctx) Out {
 	c.Merged = true
 	logEvent(map[string]any{"event": "merged", "pr": pr, "note": "the worktree is left in place: remove it with git worktree remove"})
 	return Ok
+}
+
+// resolveConflicts hands a stopped rebase's conflicts to the resolve agent, stages its
+// edits and continues, until the rebase ends. false leaves the rebase for the caller to abort.
+// The caller reruns the checks on the result, so a bad merge still fails publish.
+func resolveConflicts(c *Ctx) bool {
+	for range 3 { // one conflict stop per rebased commit; publish rebases one or a few
+		files, _ := git(c, "diff", "--name-only", "--diff-filter=U")
+		if files == "" { // the rebase stopped for something other than a conflict
+			return false
+		}
+		stopped, _ := git(c, "log", "-1", "--format=%h %s", "REBASE_HEAD")
+		var r struct{ Status, Summary string }
+		prompt := fmt.Sprintf("Issue #%d: %s\nCommit being applied: %s\nConflicted files:\n%s", c.Issue, c.Title, stopped, files)
+		if agent(c, Resolve, prompt, &r) != Ok || r.Status != "resolved" {
+			logEvent(map[string]any{"event": "publish-error", "err": "rebase conflict not resolved", "files": files, "summary": r.Summary})
+			return false
+		}
+		list := strings.Split(files, "\n")
+		// sh, not git: grep exits 1 when no marker is left, which is the good case
+		if left, _ := sh(c.Repo, "git", append([]string{"grep", "-l", "-E", "^(<<<<<<<|>>>>>>>)( |$)", "--"}, list...)...); strings.TrimSpace(left) != "" {
+			logEvent(map[string]any{"event": "publish-error", "err": "conflict markers left", "files": left})
+			return false
+		}
+		if _, ok := git(c, append([]string{"add", "--"}, list...)...); !ok {
+			return false
+		}
+		logEvent(map[string]any{"event": "conflict-resolved", "files": files, "summary": r.Summary})
+		if _, ok := git(c, "-c", "core.editor=true", "rebase", "--continue"); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // followUpReason says why a run needs a follow-up issue, or "" when it needs none.

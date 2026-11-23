@@ -64,7 +64,9 @@ const (
 	Summarize = numStates
 	// Diagnose is an agent step outside the graph: the page runs it on a failed run's logs to say why.
 	Diagnose = numStates + 1
-	numSteps = numStates + 2
+	// Resolve is an agent step outside the graph: publish runs it when the rebase conflicts.
+	Resolve  = numStates + 2
+	numSteps = numStates + 3
 )
 
 func (s State) String() string { return steps[s].Name }
@@ -168,6 +170,11 @@ func init() { // not a composite literal at package level: the step functions re
 			Role: "auditor", Model: sonnet,
 			Schema: `{"type":"object","properties":{"cause":{"type":"string"},"fix":{"type":"string"},"kind":{"enum":["bug","follow-up"]},"title":{"type":"string"},"body":{"type":"string"}},"required":["cause","fix","kind","title","body"],"additionalProperties":false}`,
 			Allow:  "Read,Grep,Glob," + shRead},
+		Resolve: {Name: "resolve", Outs: []Out{Ok, Blocked, Invalid, Timeout, OverBudget},
+			Role: "resolver", Model: haiku, // merging two edits of one file is a small text job
+			Schema: `{"type":"object","properties":{"status":{"enum":["resolved","blocked"]},"summary":{"type":"string"}},"required":["status","summary"],"additionalProperties":false}`,
+			Allow:  "Read,Grep,Glob,Edit,Write," + shRead + ",Bash(git diff:*),Bash(git status:*)",
+			Edit:   true},
 	}
 	var schema map[string]any
 	var proposal map[string]any

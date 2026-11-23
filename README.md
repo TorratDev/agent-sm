@@ -77,7 +77,7 @@ in place; delete it before running the issue again.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SM_PUBLISH` | empty | empty: stop at a local staged branch. `pr`: commit, rebase, push, open a draft PR. `merge`: also merge it. |
+| `SM_PUBLISH` | empty | empty: stop at a local staged branch. `pr`: commit, rebase, push, open a draft PR. `merge`: also merge it. A rebase conflict goes to a `resolve` agent (Haiku) that merges the conflicted files; the checks then rerun, and markers left or a `blocked` answer abort the rebase. |
 | `SM_BASE` | `origin/main` | Branch that worktrees start from and publish rebases onto. |
 | `SM_PROVIDER` | `copilot` | Runner: `copilot`, `claude`, or `opencode`. |
 | `SM_SESSION_LIMIT` | Copilot: `100`; Claude/OpenCode: `2` | Session limit in the provider's native units: Copilot AI credits (minimum 100) or Claude/OpenCode USD. |
@@ -85,7 +85,7 @@ in place; delete it before running the issue again.
 | `SM_CONCURRENCY` | `1` | Starting value of the page's **In parallel** field: how many queued issues `serve` runs at once (1–16, across all selected repositories). Choosing another number and pressing Run changes it for the whole server; lowering it lets running jobs finish and holds new ones back. Each job gets its own `<n>-sm` worktree and branch; one issue never runs twice at once, and a queued issue that is already running waits. Session and run limits apply to each job, so the total spend can reach this many times the run limit. Stop and Ctrl-C end every running job. Profile field: `concurrency`. |
 | `SM_BUDGET`, `SM_RUN_BUDGET` | none | Legacy dollar-limit aliases for Claude and OpenCode. Rejected for Copilot rather than converted to credits. |
 | `SM_TIMEOUT` | `60` | Minutes before an agent session and its child processes are killed. |
-| `SM_MODEL_<STATE>` | Copilot: `auto`; Claude: sonnet 5.5, opus 5.5 for review, haiku 5.5 for `SUMMARIZE` (the follow-up body); sonnet 5.5 for `DIAGNOSE` (the failed-run audit); OpenCode: `opencode/deepseek-v4.1-flash-free`; plan/review prefer `jev-1.13-free`, then `opencode/glm-5.3-flash`, when installed | Explicit CLI model ID per step. The page offers the selected provider's models as suggestions, while keeping the value editable. The web input wins for queued runs. |
+| `SM_MODEL_<STATE>` | Copilot: `auto`; Claude: sonnet 5.5, opus 5.5 for review, haiku 5.5 for `SUMMARIZE` (the follow-up body); sonnet 5.5 for `DIAGNOSE` (the failed-run audit); haiku 5.5 for `RESOLVE` (publish rebase conflicts); OpenCode: `opencode/deepseek-v4.1-flash-free`; plan/review prefer `jev-1.13-free`, then `opencode/glm-5.3-flash`, when installed | Explicit CLI model ID per step. The page offers the selected provider's models as suggestions, while keeping the value editable. The web input wins for queued runs. |
 | `SM_CHECKS` | profile (required) | Check commands, one per line. Empty checks fail configuration. |
 | `SM_FMT` | profile or none | Formatter run before staging/checks; failure is explicit. Setting `SM_CHECKS` without `SM_FMT` disables the profile formatter. |
 | `SM_ALLOW_FILE` | none | Claude-only JSON `{"state": "tools"}`; invalid files fail startup. Prefer profile `commands` for portable shell tools. |
