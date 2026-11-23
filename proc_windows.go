@@ -61,7 +61,7 @@ func agentCommand(name string, args []string) (string, []string) {
 	if target := filepath.Join(dir, string(m[1])); strings.EqualFold(filepath.Ext(target), ".exe") {
 		return target, args
 	}
-	node :=filepath.Join(dir, "node.exe") // the shim prefers a node beside it
+	node := filepath.Join(dir, "node.exe") // the shim prefers a node beside it
 	if _, err := os.Stat(node); err != nil {
 		node = "node"
 	}
