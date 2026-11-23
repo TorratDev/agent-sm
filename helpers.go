@@ -45,6 +45,36 @@ func handledElsewhere(c *Ctx) string {
 	return ""
 }
 
+// prRef is the open PR an issue's sm branch (sm/issue-N or sm/issue-N-K) was pushed for.
+type prRef struct {
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+}
+
+// issuePRs maps each issue with an open sm PR to that PR. A gh error gives no PRs, so the list still shows.
+// shortcut: scans the 100 newest open PRs only, as handledElsewhere does; an older PR shows no tag.
+func issuePRs(repo string) map[int]prRef {
+	prs := map[int]prRef{}
+	out, err := sh(repo, "gh", "pr", "list", "--state", "open", "--limit", "100", "--json", "number,headRefName,url")
+	var list []struct {
+		Number      int
+		HeadRefName string
+		URL         string
+	}
+	if err != nil || json.Unmarshal([]byte(out), &list) != nil {
+		logEvent(map[string]any{"event": "issue-prs", "err": "gh pr list failed", "out": tail(out, 300)})
+		return prs
+	}
+	for _, p := range list {
+		if m := issueBranchRe.FindStringSubmatch(p.HeadRefName); m != nil {
+			if n, _ := strconv.Atoi(m[1]); prs[n].URL == "" {
+				prs[n] = prRef{p.Number, p.URL}
+			}
+		}
+	}
+	return prs
+}
+
 func issueBranchName(issue, attempt int) string {
 	name := "sm/issue-" + strconv.Itoa(issue)
 	if attempt > 0 {
