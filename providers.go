@@ -319,7 +319,7 @@ func cleanAgentEnv() []string {
 func checkCommand(dir, command string, env ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(runCtx, time.Duration(settings.TimeoutMinutes*float64(time.Minute)))
 	defer cancel()
-	cmd := process(ctx, dir, "sh", "-c", command)
+	cmd := process(ctx, dir, shellPath(), "-c", command)
 	cmd.Env = append(cleanAgentEnv(), env...)
 	output := &boundedOutput{limit: 4 << 20}
 	cmd.Stdout, cmd.Stderr = output, output

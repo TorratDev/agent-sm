@@ -35,3 +35,17 @@ func TestAgentCommandUnwrapsNpmShim(t *testing.T) {
 		t.Fatalf("an unknown command changed: %q %q", name, args)
 	}
 }
+
+// A PATH with only Git\cmd (what Git for Windows installs, as PowerShell sees it) still finds Git's sh.
+func TestShellPathFindsGitShWithoutItOnPath(t *testing.T) {
+	git := t.TempDir()
+	os.MkdirAll(filepath.Join(git, "cmd"), 0o755)
+	os.MkdirAll(filepath.Join(git, `usr\bin`), 0o755)
+	os.WriteFile(filepath.Join(git, `cmd\git.exe`), nil, 0o755)
+	os.WriteFile(filepath.Join(git, `usr\bin\sh.exe`), nil, 0o755)
+	t.Setenv("PATH", filepath.Join(git, "cmd"))
+	t.Setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+	if got, want := shellPath(), filepath.Join(git, `usr\bin\sh.exe`); got != want {
+		t.Fatalf("shellPath = %q, want %q", got, want)
+	}
+}

@@ -37,6 +37,23 @@ func killProcessGroup(pid int, sig syscall.Signal) error {
 	return nil
 }
 
+// shellPath finds sh for check commands. A Git for Windows install adds only Git\cmd to the
+// system PATH, so a server started from PowerShell or cmd cannot see sh: use the one Git ships.
+func shellPath() string {
+	if p, err := exec.LookPath("sh"); err == nil {
+		return p
+	}
+	if git, err := exec.LookPath("git"); err == nil {
+		root := filepath.Dir(filepath.Dir(git)) // Git\cmd\git.exe or Git\bin\git.exe -> Git
+		for _, sh := range []string{`usr\bin\sh.exe`, `bin\sh.exe`} {
+			if _, err := os.Stat(filepath.Join(root, sh)); err == nil {
+				return filepath.Join(root, sh)
+			}
+		}
+	}
+	return "sh"
+}
+
 // npmShimScript finds what an npm .cmd shim runs: a script it hands to node,
 // "%dp0%\node_modules\...\x.js", or a native binary it runs itself (claude-code ships claude.exe).
 var npmShimScript = regexp.MustCompile(`"%dp0%\\([^"]+\.(?:js|exe))"`)
