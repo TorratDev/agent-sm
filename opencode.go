@@ -313,7 +313,7 @@ func opencodeQuotaError(detail string) bool {
 // quota error. Matching is by suffix so provider-qualified variants (for example
 // nvidia/z-ai/glm-5.3-flash) also count.
 var opencodeFallbackFamilies = []string{
-	"/jev-1.13-free", "/glm-5.3-flash", "/glm-5.3",
+	"/glm-5.3-flash", "/glm-5.3",
 	"/deepseek-v4.1-flash-free", "/deepseek-v4.1-flash", "/deepseek-v4-pro",
 	"/beam-free",
 }
@@ -461,18 +461,12 @@ func (c *modelCatalog) list(parse func(string) []string, name string, args ...st
 }
 
 // opencodeModelFor picks the default OpenCode model for a step. DeepSeek Flash is
-// the safe working model. Plan and review prefer jev-1.13-free, then OpenCode's
-// GLM Flash, when the installed catalog offers them.
+// the safe working model. Plan and review prefer OpenCode's GLM Flash when the
+// installed catalog offers it. Not Jev: it is a decision model and cannot run an agent step.
 func opencodeModelFor(st Step) string {
 	switch st.Name {
 	case "plan", "review":
-		models := opencodeModels()
-		for _, model := range models {
-			if model == opencodeJevModel || strings.HasSuffix(model, "/jev-1.13-free") {
-				return model
-			}
-		}
-		for _, model := range models {
+		for _, model := range opencodeModels() {
 			if model == opencodeDecisionModel {
 				return model
 			}
@@ -488,8 +482,6 @@ func opencodeModelID(model string) string {
 		return opencodeDefaultModel
 	case "glm-5.3-flash":
 		return opencodeDecisionModel
-	case "jev-1.13-free":
-		return opencodeJevModel
 	}
 	return model
 }

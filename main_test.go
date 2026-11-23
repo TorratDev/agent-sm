@@ -364,7 +364,8 @@ case "$1 $2" in
 esac
 `, 0o755)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("SM_EPIC", "") // no epic: the follow-up is still filed
+	t.Setenv("SM_EPIC", "")          // no epic: the follow-up is still filed
+	t.Setenv("OPENCODE_API_KEY", "") // no duplicate check, so no call to the real Jev
 	c := &Ctx{Repo: dir, Scratch: dir, Issue: 5, Title: "t", Level: levelPR, Partial: true, PR: "42", RunBudget: 1, CostUnknown: 1}
 	followUp(c, Ready)
 	b, _ := os.ReadFile(log)

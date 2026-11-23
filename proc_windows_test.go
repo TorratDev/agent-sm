@@ -24,6 +24,13 @@ func TestAgentCommandUnwrapsNpmShim(t *testing.T) {
 	if name, _ := agentCommand("fakeagent", nil); name != filepath.Join(dir, "node.exe") {
 		t.Fatalf("agentCommand node = %q", name)
 	}
+	// claude-code's shim runs a native binary, which is run directly
+	native := "@ECHO off\r\nGOTO start\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe\"   %*\r\n"
+	os.WriteFile(filepath.Join(dir, "nativeagent.cmd"), []byte(native), 0o644)
+	name, args = agentCommand("nativeagent", []string{"-p", "line one\nline two"})
+	if want := filepath.Join(dir, `node_modules\@anthropic-ai\claude-code\bin\claude.exe`); name != want || len(args) != 2 || args[1] != "line one\nline two" {
+		t.Fatalf("agentCommand native = %q %q", name, args)
+	}
 	if name, args := agentCommand("missing", []string{"x"}); name != "missing" || args[0] != "x" {
 		t.Fatalf("an unknown command changed: %q %q", name, args)
 	}
