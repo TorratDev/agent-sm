@@ -249,6 +249,15 @@ func followUp(c *Ctx, exit Exit) {
 	if c.PR != "" {
 		body += fmt.Sprintf("\nCreated by: PR #%s, which delivers part of #%d", c.PR, c.Issue)
 	}
+	if dup := duplicateIssue(c.Repo, "follow-up", c.Title, work); dup != "" { // add to it, not a copy of it
+		num := dup[strings.LastIndex(dup, "/")+1:]
+		gh(c, "issue", "comment", num, "--body", fmt.Sprintf("agent-sm found more of this work while running #%d (%s):\n\n%s", c.Issue, reason, work))
+		logEvent(map[string]any{"event": "follow-up-duplicate", "url": dup})
+		if c.PR != "" {
+			gh(c, "pr", "comment", c.PR, "--body", fmt.Sprintf("This PR delivers part of #%d. The remaining work is tracked in #%s.", c.Issue, num))
+		}
+		return
+	}
 	url, ok := gh(c, "issue", "create", "--title", c.Title, "--body", body, "--label", "follow-up")
 	if !ok { // e.g. no "follow-up" label: keep the remaining work on the issue, or it is lost
 		gh(c, "issue", "comment", strconv.Itoa(c.Issue), "--body", fmt.Sprintf(
@@ -373,6 +382,14 @@ func fileDiagnosis(dir, repo string, issue int) (string, error) {
 		return d.Issue, nil
 	}
 	body := fmt.Sprintf("%s\n\nFound by the agent-sm auditor in the failed run of #%d (exit: %s).", d.Body, issue, d.Exit)
+	if dup := duplicateIssue(repo, d.Kind, d.Title, d.Body); dup != "" { // the board links the issue that already has it
+		if out, err := sh(repo, "gh", "issue", "comment", dup, "--body", body); err != nil {
+			return "", fmt.Errorf("gh issue comment: %s", tail(out, 300))
+		}
+		d.Issue = dup
+		b, _ = json.MarshalIndent(d, "", "  ")
+		return d.Issue, os.WriteFile(path, b, 0o644)
+	}
 	args := []string{"issue", "create", "--title", d.Title, "--body", body}
 	out, err := sh(repo, "gh", append(args, "--label", d.Kind)...)
 	if err != nil { // the repo may have no such label
