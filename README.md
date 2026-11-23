@@ -356,6 +356,24 @@ The durable journal is under `<state-root>/management/<repository-hash>/`, separ
 rotating run logs, with private files and a per-repository process lock. It currently rewrites
 the complete history; large installations should compact/split this state before scaling it.
 
+## Scripting the server
+
+`serve` is also the API for scripts and agents; the page uses nothing else. Reads are plain
+`GET`s (`/api/graph`, `/api/runs`, `/api/state?issue=N`, `/api/queue`, `/api/issues`). Actions are
+`POST`s with the per-start token in `X-SM-Token`; any local process can read it from the page:
+
+```sh
+B=http://127.0.0.1:8080
+TOK=$(curl -s $B/ | sed -n 's/.*const TOKEN = "\([0-9a-f]*\)".*/\1/p')
+curl -s -X POST -H "X-SM-Token: $TOK" -d '{"issues":[42],"publish":""}' $B/api/run
+curl -s "$B/api/state?issue=42"
+curl -s -X POST -H "X-SM-Token: $TOK" $B/api/stop
+```
+
+Other actions: `POST /api/dismiss?issue=N`, `/api/diagnose?issue=N`, `/api/diagnosis-issue?issue=N`,
+and the `/api/management/*` routes above. `/api/run` takes the `runRequest` fields in `serve.go`
+and rejects unknown ones. Only localhost `Host`/`Origin` headers are accepted.
+
 ## Run data
 
 - Web run data is stored under `<scratch-root>/repos/<repository-hash>/<issue>/`, with numbered retries in `attempt-1/`, `attempt-2/`, etc.
