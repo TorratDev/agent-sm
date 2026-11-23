@@ -37,8 +37,9 @@ func killProcessGroup(pid int, sig syscall.Signal) error {
 	return nil
 }
 
-// npmShimScript finds the script an npm .cmd shim hands to node: "%dp0%\node_modules\...\x.js".
-var npmShimScript = regexp.MustCompile(`"%dp0%\\([^"]+\.js)"`)
+// npmShimScript finds what an npm .cmd shim runs: a script it hands to node,
+// "%dp0%\node_modules\...\x.js", or a native binary it runs itself (claude-code ships claude.exe).
+var npmShimScript = regexp.MustCompile(`"%dp0%\\([^"]+\.(?:js|exe))"`)
 
 // agentCommand runs an npm-installed CLI through node rather than its .cmd shim:
 // cmd.exe cuts a batch file's command line at the first newline, so a multi-line -p prompt
@@ -57,7 +58,10 @@ func agentCommand(name string, args []string) (string, []string) {
 		return name, args
 	}
 	dir := filepath.Dir(path)
-	node := filepath.Join(dir, "node.exe") // the shim prefers a node beside it
+	if target := filepath.Join(dir, string(m[1])); strings.EqualFold(filepath.Ext(target), ".exe") {
+		return target, args
+	}
+	node :=filepath.Join(dir, "node.exe") // the shim prefers a node beside it
 	if _, err := os.Stat(node); err != nil {
 		node = "node"
 	}
