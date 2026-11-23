@@ -795,6 +795,7 @@ if [ -n "$session" ] && [ "$SM_TEST_MODE" != "missing-messages" ]; then
   mkdir -p "$COPILOT_HOME/session-state/$session"
   printf '%s' "$SM_TEST_MESSAGES" > "$COPILOT_HOME/session-state/$session/events.jsonl"
 fi
+if [ -n "$SM_TEST_STDIN" ]; then cat > "$SM_TEST_STDIN"; fi
 printf '%s' "$SM_TEST_STDOUT"
 printf 'diagnostic\nsecond line\n' >&2
 if [ "$SM_TEST_MODE" = "timeout" ]; then sleep 300; fi
@@ -810,6 +811,7 @@ if [ "$SM_TEST_MODE" = "failure" ]; then exit 1; fi
 				t.Setenv("SM_TEST_SECRET", "must-not-dump-environment")
 				messages := "{\"type\":\"assistant.message\",\"data\":{\"content\":\"tool discussion\"}}\n{\"type\":\"tool.execution_complete\",\"data\":{\"result\":\"tool output\"}}\n"
 				t.Setenv("SM_TEST_MESSAGES", messages)
+				t.Setenv("SM_TEST_STDIN", filepath.Join(scratch, "stdin.txt"))
 				raw := "{\"verdict\":\"PASS\",\"reasons\":[]}\n"
 				if mode == "malformed" {
 					raw = "{\"verdict\":\"PASS\",\"reasons\":[\"raw\nnewline\"]}\n"
@@ -891,7 +893,13 @@ if [ "$SM_TEST_MODE" = "failure" ]; then exit 1; fi
 						if err := json.Unmarshal(request, &req); err != nil {
 							t.Fatal(err)
 						}
-						if req.Schema != steps[Review].Schema || !strings.Contains(strings.Join(req.Args, "\n"), "exact prompt\nwith newline") ||
+						// claude reads the prompt from stdin (the fake saves it); copilot still takes it as an argument.
+						promptOK := strings.Contains(strings.Join(req.Args, "\n"), "exact prompt\nwith newline")
+						if provider == "claude" {
+							stdin, _ := os.ReadFile(filepath.Join(scratch, "stdin.txt"))
+							promptOK = strings.Contains(string(stdin), "exact prompt\nwith newline") && !strings.Contains(strings.Join(req.Args, "\n"), "exact prompt")
+						}
+						if req.Schema != steps[Review].Schema || !promptOK ||
 							strings.Contains(string(request), "must-not-dump-environment") || strings.Contains(string(request), "bypassPermissions") {
 							t.Fatalf("incorrect request or permissions: %s", request)
 						}
