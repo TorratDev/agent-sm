@@ -324,7 +324,11 @@ func checkCommand(dir, command string, env ...string) (string, error) {
 	output := &boundedOutput{limit: 4 << 20}
 	cmd.Stdout, cmd.Stderr = output, output
 	err := cmd.Run()
-	logEvent(map[string]any{"event": "check-command", "command": command, "ok": err == nil})
+	ev := map[string]any{"event": "check-command", "command": command, "ok": err == nil}
+	if err != nil {
+		ev["err"] = err.Error()
+	}
+	logEvent(ev)
 	return output.String(), err
 }
 

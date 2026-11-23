@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -1121,6 +1122,15 @@ esac
 	}
 	if o, got = run("fix it\\n"+fixesBaseMarker, ""); o != Ok || strings.Contains(got, "issue create") {
 		t.Fatalf("the bug's own run must skip the base check: %v\n%s", o, got)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	saved := runCtx
+	runCtx = cancelled
+	o, got = run("only docs", "")
+	runCtx = saved
+	if o != Fail || strings.Contains(got, "issue create") || strings.Contains(got, "issue comment") {
+		t.Fatalf("a check that never ran must not file a base bug: %v\n%s", o, got)
 	}
 	ran := filepath.Join(dir, "check-ran")
 	settings.Checks = []string{"echo x >> " + ran}

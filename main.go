@@ -750,6 +750,10 @@ func prepare(c *Ctx) Out {
 		} else if !checkList(c, baseChecks(), baseReports()) {
 			failed := c.Feedback
 			c.Feedback, c.CheckOut = "", ""
+			if strings.HasPrefix(failed, checkNotRun) { // the base was never judged: filing a bug would blame a clean main
+				logEvent(map[string]any{"event": "prepare", "err": "base check could not run", "out": tail(failed, 2000)})
+				return Fail
+			}
 			logEvent(map[string]any{"event": "prepare", "err": "base " + c.Base + " fails its checks before any change", "out": tail(failed, 2000)})
 			baseBug(c, failed)
 			return Fail
@@ -951,6 +955,8 @@ func baseReports() []string {
 	return settings.TestReports
 }
 
+const checkNotRun = "check could not run: "
+
 func checkList(c *Ctx, checks, reports []string) bool {
 	if len(checks) == 0 {
 		c.Feedback = "no checks configured"
@@ -966,6 +972,10 @@ func checkList(c *Ctx, checks, reports []string) bool {
 		out, err := checkCommand(c.Repo, cmd, "SM_CHECK_RESULTS="+resultDir, "SM_SCRATCH="+c.Scratch)
 		if err != nil {
 			c.Feedback = "check failed: " + cmd + "\n" + tail(out, 4000)
+			// No exit status means the command never ran to the end (start error, run cancelled): not a verdict on the code.
+			if _, exited := err.(*exec.ExitError); !exited || runCtx.Err() != nil {
+				c.Feedback = checkNotRun + cmd + ": " + err.Error() + "\n" + tail(out, 4000)
+			}
 			return false
 		}
 		c.CheckOut += "$ " + cmd + "\n" + ends(out, 500, 1000) + "\n"
