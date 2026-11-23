@@ -895,7 +895,7 @@ if [ "$SM_TEST_MODE" = "failure" ]; then exit 1; fi
 						}
 						// claude reads the prompt from stdin (the fake saves it); copilot still takes it as an argument.
 						promptOK := strings.Contains(strings.Join(req.Args, "\n"), "exact prompt\nwith newline")
-						if provider == "claude" {
+						if provider == "claude" && mode != "startup" { // startup never runs the fake, so nothing is saved
 							stdin, _ := os.ReadFile(filepath.Join(scratch, "stdin.txt"))
 							promptOK = strings.Contains(string(stdin), "exact prompt\nwith newline") && !strings.Contains(strings.Join(req.Args, "\n"), "exact prompt")
 						}
