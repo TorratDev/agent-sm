@@ -243,8 +243,19 @@ func TestQueuedLanguageProfile(t *testing.T) {
 	}
 }
 
+// realTempDir is t.TempDir() as Git reports it: macOS's /var is a symlink to /private/var,
+// and Windows' temp path can hold 8.3 short names (RUNNER~1).
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func TestCanonicalRepo(t *testing.T) {
-	dir := t.TempDir()
+	dir := realTempDir(t)
 	repo := filepath.Join(dir, "repo")
 	if err := os.Mkdir(repo, 0o755); err != nil {
 		t.Fatal(err)
@@ -275,7 +286,7 @@ func TestRunScratchSeparatesRepositories(t *testing.T) {
 }
 
 func TestFolderBrowser(t *testing.T) {
-	root := t.TempDir()
+	root := realTempDir(t)
 	t.Setenv("HOME", root)
 	t.Setenv("USERPROFILE", root)
 	repo, plain, linked := filepath.Join(root, "repo"), filepath.Join(root, "plain folder"), filepath.Join(root, "linked")
@@ -1425,7 +1436,11 @@ func TestWorktreeLinks(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(dir, "missing.bin")); err == nil {
 		t.Fatal("linked a file the main checkout does not have")
 	}
-	for _, bad := range []string{"../x", "/etc/passwd", "."} {
+	bad := []string{"../x", "/etc/passwd", ".", "a/../../x"}
+	if runtime.GOOS == "windows" { // names that only leave the repo on Windows
+		bad = append(bad, `\\server\share\x`, `C:\x`, `C:x`, `..\x`)
+	}
+	for _, bad := range bad {
 		p := defaultProfile("claude")
 		p.Checks, p.Links = []string{"true"}, []string{bad}
 		if p.validate() == nil {

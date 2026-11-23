@@ -358,7 +358,8 @@ func (p Profile) validateFor(managementOnly bool) error {
 		}
 	}
 	for _, f := range p.Links {
-		if f = filepath.Clean(f); f == "." || filepath.IsAbs(f) || f == ".." || strings.HasPrefix(f, ".."+string(filepath.Separator)) {
+		// IsLocal, not IsAbs: on Windows "/etc/passwd" and "C:x" are not absolute but still leave the repo.
+		if f = filepath.Clean(f); f == "." || !filepath.IsLocal(f) {
 			return fmt.Errorf("links must be paths inside the repository")
 		}
 	}
@@ -371,7 +372,7 @@ func (p Profile) validateFor(managementOnly bool) error {
 		}
 	}
 	for _, pattern := range p.TestReports {
-		if filepath.IsAbs(pattern) || strings.Contains(pattern, "..") || !strings.HasSuffix(pattern, ".trx") {
+		if !filepath.IsLocal(pattern) || strings.Contains(pattern, "..") || !strings.HasSuffix(pattern, ".trx") {
 			return fmt.Errorf("required_test_reports must be relative TRX globs under SM_CHECK_RESULTS")
 		}
 		if _, err := filepath.Match(pattern, ""); err != nil {
