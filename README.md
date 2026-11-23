@@ -97,6 +97,7 @@ in place; delete it before running the issue again.
 | `SM_TRANSCRIPTS` | `true` | Local transcript saving for every provider (`true`/`false` or `1`/`0`), on by default while runs still error. A capture failure is logged and never fails the step. Independent of permission audit. |
 | `SM_GHIDRA_COPY` | `none` | Legacy-profile-only Ghidra project copy. |
 | `SM_EXPORT` | `~/rescue-re/export` | Legacy-profile-only export; generic runs do not inspect it. |
+| `SM_PROBE_PYTHON` | `~/venvs/desmume/bin/python` | Legacy-profile-only py-desmume interpreter. Replaces the path in the role prompts and the allow list (e.g. `C:\venvs\desmume\Scripts\python.exe` on Windows). |
 | `SM_EPIC` | none | Epic named in a follow-up issue. A follow-up (three failed fix rounds, or a partial delivery whose review lists remaining work the issue asked for) is filed with any publish level as a sub-issue of the issue it came from; after a partial PR it names that PR, and the PR gets a comment naming it. If filing fails, the run comments on the issue instead. A split files nothing: the issue stays open, so the run comments the breakdown on it for a person to turn into sub-issues. |
 | `OPENCODE_API_KEY` | unset | OpenCode Console API key. When set, agent-sm asks Jev (`jev-1.13-free`, OpenCode's System One decision model) whether an open `follow-up` or `bug` issue already asks for the work before it files one. A confident match (≥ 0.9) gets a comment and no new issue; no key, no answer, low confidence or new work files the issue as before. Each answer is logged as a `jev-duplicate` event. |
 | `SM_LINKS` | none | Comma-separated gitignored files to symlink into a worktree (serve), added to the profile's `links`. |
@@ -401,17 +402,34 @@ Linux, macOS and Windows. Platform differences are isolated in `filelock_unix.go
 `proc_windows.go` (process groups and group kill: `setpgid`/`kill(-pid)` vs
 `CREATE_NEW_PROCESS_GROUP`/`taskkill /T`/`CTRL_BREAK_EVENT`). Windows caveats:
 
-- Check commands run via `sh -c`, so a `sh` (e.g. Git for Windows) must be on `PATH`.
+- Check commands run via `sh -c`. Install Git for Windows: its `sh.exe` is found next to
+  `git` even when only `Git\cmd` is on `PATH`.
 - Group kill uses `taskkill /T`; if that misses a descendant, the one-second pipe
   timeout ends the session anyway.
 - `SM_LINKS` symlinks need Windows Developer Mode (or an elevated process).
 - Tests that fake providers with `#!/bin/sh` scripts self-skip on Windows; run the
   full suite on Linux, macOS or WSL.
 
+Portability rules for the whole repository:
+
+- No machine-specific paths in code: every location has an environment override
+  (`SM_SCRATCH_ROOT`, `SM_STATS`, `SM_EXPORT`, `SM_PROBE_PYTHON`, `COPILOT_HOME`, ...) and a
+  default derived from the home directory. Run history defaults to
+  `$XDG_STATE_HOME/agent-sm`, else `~/.local/state/agent-sm` on every OS (on Windows,
+  `%USERPROFILE%\.local\state\agent-sm`).
+- Pure Go, no cgo: `CGO_ENABLED=0 go build` works for every target, so a binary can be
+  cross-compiled (`GOOS=windows GOARCH=amd64 go build`) and copied to another machine.
+- `.gitattributes` keeps LF line endings on every checkout, so embedded prompts, `gofmt`
+  and shell scripts behave the same on Windows.
+- Helper scripts (`scripts/`, `.claude/skills/*/*.sh`) need only bash 3.2 and tools present on
+  both Linux and macOS; on Windows run them from Git Bash or WSL.
+
 ## Tests
 
 GitHub Actions runs formatting checks, `go vet`, race-enabled tests, and a build on pull
-requests and pushes to `main`, using the Go version in `go.mod`. Live agent smoke tests
+requests and pushes to `main`, using the Go version in `go.mod`. It also vets and
+cross-compiles for Linux, macOS and Windows (amd64 and arm64), and runs the test suite
+natively on macOS and Windows. Live agent smoke tests
 remain opt-in and are not run in CI.
 
     go vet ./... && go test ./...

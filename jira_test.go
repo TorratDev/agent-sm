@@ -123,7 +123,7 @@ case "$1 $2" in
   *) exit 1;;
 esac
 `, 0o755)
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("JIRA_USER_EMAIL", "test@example.invalid")
 	t.Setenv("JIRA_API_TOKEN", "test-token")
 	p := defaultProfile("copilot")

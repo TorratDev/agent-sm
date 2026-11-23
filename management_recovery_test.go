@@ -409,7 +409,7 @@ esac
 printf 'HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n{"id":1}'
 `
 	writeFile(t, filepath.Join(dir, "gh"), script, 0700)
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	client := &remoteTrackers{repo: dir, profile: Profile{Management: ManagementConfig{Host: "github.com"}}}
 	var actual struct{ ID int }
 	if err := client.call(context.Background(), "github", "POST", "/test", map[string]string{"title": "$(do-not-run)"}, &actual); err != nil || actual.ID != 1 {

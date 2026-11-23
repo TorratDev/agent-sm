@@ -20,7 +20,7 @@ func TestAgentKillsProcessGroup(t *testing.T) {
 	pidFile := filepath.Join(dir, "pid")
 	// Write then rename, so the watcher below never reads a half-written pid file.
 	os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nsleep 300 &\necho $! > "+pidFile+".tmp && mv "+pidFile+".tmp "+pidFile+"\nwait\n"), 0o755)
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SM_STATS", filepath.Join(dir, "stats.jsonl"))
 	ctx, cancel := context.WithCancel(context.Background())
 	runCtx = ctx

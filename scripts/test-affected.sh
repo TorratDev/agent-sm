@@ -21,7 +21,7 @@ extra=("$@")
 
 run_all() {
 	echo "test-affected: running full suite ($1)"
-	exec go test "${extra[@]}" ./...
+	exec go test ${extra[@]+"${extra[@]}"} ./...
 }
 
 [ "${TEST_ALL:-}" = "1" ] && run_all "TEST_ALL=1"
@@ -33,7 +33,9 @@ fi
 changed=$(git diff --name-only "$base" HEAD --; git diff --name-only HEAD --; git ls-files --others --exclude-standard)
 changed=$(printf '%s\n' "$changed" | sort -u | sed '/^$/d')
 
-declare -A test_files=()
+# A newline-separated list, not an associative array: macOS ships bash 3.2.
+test_files=""
+add_test_file() { test_files=$(printf '%s\n%s' "$test_files" "$1"); }
 for f in $changed; do
 	case "$f" in
 	go.mod | go.sum | prompts/* | web/* | examples/* | .github/workflows/* | scripts/test-affected.sh)
@@ -43,27 +45,28 @@ for f in $changed; do
 	*/*.go)
 		run_all "$f is outside the root package" ;;
 	*_test.go)
-		[ -f "$f" ] && test_files["$f"]=1 ;;
+		if [ -f "$f" ]; then add_test_file "$f"; fi ;;
 	*.go)
 		stem=${f%.go}
 		area=${stem%%_*}
 		matches=$(ls "$area"_test.go "$area"_*_test.go 2>/dev/null || true)
 		[ -z "$matches" ] && run_all "$f has no area tests"
-		for m in $matches; do test_files["$m"]=1; done ;;
+		for m in $matches; do add_test_file "$m"; done ;;
 	esac
 done
 
-if [ "${#test_files[@]}" -eq 0 ]; then
+test_files=$(printf '%s\n' "$test_files" | sed '/^$/d' | sort -u)
+if [ -z "$test_files" ]; then
 	echo "test-affected: no Go-relevant changes since $base; skipping tests"
 	exit 0
 fi
 
-names=$(grep -hoE '^func (Test|Fuzz|Example)[A-Za-z0-9_]*\(' "${!test_files[@]}" |
+names=$(grep -hoE '^func (Test|Fuzz|Example)[A-Za-z0-9_]*\(' $test_files |
 	sed -E 's/^func //; s/\($//' | grep -vx TestMain | sort -u | paste -sd'|' -)
 if [ -z "$names" ]; then
 	echo "test-affected: changed test files define no tests; skipping"
 	exit 0
 fi
 
-echo "test-affected: files ${!test_files[*]}"
-exec go test "${extra[@]}" -run "^(${names})\$" ./...
+echo "test-affected: files" $test_files
+exec go test ${extra[@]+"${extra[@]}"} -run "^(${names})\$" ./...

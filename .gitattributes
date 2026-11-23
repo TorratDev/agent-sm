@@ -1,0 +1,8 @@
+# One line ending on every OS: embedded prompts, gofmt and sh scripts all expect LF,
+# and a Windows checkout with core.autocrlf would otherwise convert them to CRLF.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary

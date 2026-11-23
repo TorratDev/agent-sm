@@ -434,7 +434,7 @@ func configuredAllow(state State) string {
 		allow += "," + x
 	}
 	if settings.Legacy {
-		allow += "," + shProbe
+		allow += "," + shProbe()
 		if state == Execute {
 			allow += ",Bash(cargo:*),Bash(scripts/check-deps.sh:*),Bash(./scripts/check-deps.sh:*),Bash(scripts/verify.sh:*)"
 		} else if state != Plan {

@@ -35,7 +35,7 @@ func rolePrompt(s State) string {
 		dir = "prompts/"
 	}
 	role, _ := promptFS.ReadFile(dir + steps[s].Role + ".md")
-	text := string(rtk) + "\n\n" + string(role)
+	text := string(rtk) + "\n\n" + strings.ReplaceAll(string(role), defaultProbePython, probePython())
 	if settings.Management.Mode == "service" {
 		text += "\n\nThe service supplies tracker context and owns all GitHub/Jira operations. Do not run tracker commands or skills. Only when decomposition is needed, you may include an issue_plan matching the supplied result schema; it is an unapproved proposal, never an instruction to apply changes. In issue_plan, parent and depends_on are local item ids from the same plan, never issue numbers. To attach tasks to the dispatched issue, add a story item with its number set to that issue's number and make the tasks children of that story's local id."
 	}
@@ -121,8 +121,22 @@ type Step struct {
 // Read-only shell commands every agent step may run, so a batched call is not denied for an `ls`.
 const shRead = "Bash(grep:*),Bash(head:*),Bash(tail:*),Bash(ls:*),Bash(cat:*),Bash(wc:*),Bash(sed:*),Bash(awk:*),Bash(cut:*),Bash(sort:*),Bash(echo:*),Bash(cd:*),Bash(test:*)"
 
-// The py-desmume interpreter the prompts name for runtime probes, and what a probe run needs.
-const shProbe = "Bash(~/venvs/desmume/bin/python:*),Bash(python3:*),Bash(export:*),Bash(mkdir:*),Bash(sha1sum:*)"
+// defaultProbePython is the py-desmume interpreter the legacy prompts name for runtime probes.
+// SM_PROBE_PYTHON replaces it (prompts and allow list alike), e.g. for a venv elsewhere or
+// Windows' Scripts\python.exe layout.
+const defaultProbePython = "~/venvs/desmume/bin/python"
+
+func probePython() string {
+	if v := os.Getenv("SM_PROBE_PYTHON"); v != "" {
+		return v
+	}
+	return defaultProbePython
+}
+
+// shProbe is what a legacy probe run needs: the probe interpreter and a few shell helpers.
+func shProbe() string {
+	return "Bash(" + probePython() + ":*),Bash(python3:*),Bash(python:*),Bash(export:*),Bash(mkdir:*),Bash(sha1sum:*),Bash(shasum:*)"
+}
 
 // Default models, as rust-mm's spawn.sh assigns them (prompts/original/orchestrator.md, Roles):
 // sonnet for the working roles, opus for the reviewer. Never the CLI's own default, which

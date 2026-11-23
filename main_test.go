@@ -397,7 +397,7 @@ printf '%s|' "$@" >> "`+log+`"; echo >> "`+log+`"
 func TestPassReviewWithRemainingWorkMarksPartial(t *testing.T) {
 	dir, scratch := t.TempDir(), t.TempDir()
 	writeFile(t, filepath.Join(dir, "opencode"), "#!/bin/sh\nprintf '%s' \"$SM_TEST_STDOUT\"\n", 0o755)
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SM_STATS", filepath.Join(dir, "stats.jsonl"))
 	p := defaultProfile("opencode")
 	p.SessionLimit, p.RunLimit = 1, 5
@@ -449,5 +449,22 @@ func TestDiagnosis(t *testing.T) {
 	}
 	if url, err := fileDiagnosis(dir, "/nonexistent", 1); err != nil || url != "https://x/issues/3" {
 		t.Fatalf("fileDiagnosis = %q, %v", url, err)
+	}
+}
+
+func TestProbePythonFollowsEnvironment(t *testing.T) {
+	useProfile(t, Profile{Provider: "claude", Legacy: true})
+	t.Setenv("SM_PROBE_PYTHON", "")
+	if !strings.Contains(rolePrompt(Investigate), defaultProbePython) || !strings.Contains(configuredAllow(Investigate), "Bash("+defaultProbePython+":*)") {
+		t.Fatal("default probe interpreter missing from prompt or allow list")
+	}
+	const custom = `C:\venvs\desmume\Scripts\python.exe`
+	t.Setenv("SM_PROBE_PYTHON", custom)
+	prompt, allow := rolePrompt(Investigate), configuredAllow(Investigate)
+	if strings.Contains(prompt, defaultProbePython) || !strings.Contains(prompt, custom) {
+		t.Fatalf("prompt still names the default interpreter:\n%s", prompt)
+	}
+	if strings.Contains(allow, defaultProbePython) || !strings.Contains(allow, "Bash("+custom+":*)") {
+		t.Fatalf("allow list does not follow SM_PROBE_PYTHON: %s", allow)
 	}
 }

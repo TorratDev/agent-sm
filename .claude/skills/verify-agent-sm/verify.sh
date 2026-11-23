@@ -14,7 +14,16 @@ port() { cat "$INST/port" 2>/dev/null || echo "${VERIFY_PORT:-8799}"; }
 url() { echo "http://127.0.0.1:$(port)"; }
 rev() { echo "$(git -C "$REPO" rev-parse HEAD)$(git -C "$REPO" diff --quiet HEAD -- . ':!.claude' || echo +dirty)"; }
 # Ours means: the recorded pid is alive and is running the binary we built.
-ours() { [ -f "$INST/pid" ] && [ "$(readlink "/proc/$(cat "$INST/pid")/exe" 2>/dev/null)" = "$BIN" ]; }
+# /proc exists on Linux only; elsewhere (macOS) ask ps for the command.
+ours() {
+  [ -f "$INST/pid" ] || return 1
+  local pid; pid=$(cat "$INST/pid")
+  if [ -e "/proc/$pid/exe" ]; then [ "$(readlink "/proc/$pid/exe")" = "$BIN" ]
+  else [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "$BIN" ]; fi
+}
+sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi; }
+# setsid (util-linux) is missing on macOS; the server still survives the script without it.
+if command -v setsid >/dev/null; then DETACH=setsid; else DETACH=nohup; fi
 evidence() { local d; d=$VERIFY_HOME/evidence/$(cat "$INST/run"); mkdir -p "$d"; echo "$d"; }
 
 case ${1:-} in
@@ -31,14 +40,14 @@ launch)
   # placed where the page looks for this repo's runs.
   seedrun=$REPO/runs/359/${2:-attempt3}
   [ -f "$seedrun/log.jsonl" ] || { echo "no archived run at $seedrun" >&2; exit 1; }
-  seed=$INST/state/repos/$(printf %s "$REPO" | sha256sum | cut -c1-16)/359
+  seed=$INST/state/repos/$(printf %s "$REPO" | sha256 | cut -c1-16)/359
   mkdir -p "$seed"
   cp "$seedrun/log.jsonl" "$seed/events.jsonl"
   cp "$seedrun/stats.jsonl" "$INST/stats.jsonl"
   cd "$REPO" # serve auto-selects the repo it is started in
   env -u SM_SCRATCH -u SM_EVENTS -u SM_PUBLISH -u SM_SELF \
     SM_SCRATCH_ROOT="$INST/state" SM_STATS="$INST/stats.jsonl" \
-    setsid "$BIN" serve "127.0.0.1:$p" >"$INST/server.log" 2>&1 &
+    "$DETACH" "$BIN" serve "127.0.0.1:$p" >"$INST/server.log" 2>&1 &
   echo $! >"$INST/pid"
   for _ in $(seq 50); do
     if curl -fs "$(url)/api/state" 2>/dev/null | grep -q '"issue":"359"'; then

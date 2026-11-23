@@ -92,7 +92,7 @@ func TestCopilotModelOptions(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "copilot"), "#!/bin/sh\n[ \"$1 $2\" = \"help config\" ] || exit 2\n"+
 		"printf '  `logLevel`: x\\n    - \"not-a-model\"\\n\\n  `model`: AI model to use.\\n    - \"gpt-5.5\"\\n    - \"claude-opus-5\"\\n\\n  `contextTier`: y\\n    - \"default\"\\n'\n", 0o755)
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if got := modelOptions("copilot"); !slices.Equal(got, []string{"auto", "claude-opus-5", "gpt-5.5"}) {
 		t.Fatalf("Copilot options = %v", got)
 	}
@@ -107,7 +107,7 @@ func TestOpencodeModelOptions(t *testing.T) {
 	opencodeCatalog.models, opencodeCatalog.at = nil, time.Time{}
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "opencode"), "#!/bin/sh\n[ \"$1\" = models ] || exit 2\nprintf 'opencode/other\\nopencode/jev-1.13-free\\nopencode/glm-5.3-flash\\n'\n", 0o755)
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	got := modelOptions("opencode")
 	if !slices.Contains(got, opencodeDefaultModel) || !slices.Contains(got, opencodeDecisionModel) ||
 		!slices.Contains(got, "opencode/other") {
@@ -159,7 +159,7 @@ printf 'diagnostic\n' >&2
 if [ "$SM_TEST_MODE" = "timeout" ]; then sleep 300; fi
 if [ "$SM_TEST_MODE" = "failure" ]; then exit 1; fi
 `, 0o755)
-			t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			t.Setenv("SM_TEST_STDOUT", tc.stdout)
 			t.Setenv("SM_TEST_MODE", tc.mode)
 			t.Setenv("SM_STATS", filepath.Join(dir, "stats.jsonl"))
@@ -226,7 +226,7 @@ case "$model" in
   *) printf '%s' "$SM_PASS" ;;
 esac
 `, 0o755)
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SM_QUOTA", opencodeEvent(map[string]any{"type": "error", "error": map[string]string{
 		"message": "Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models."}}))
 	t.Setenv("SM_PASS", opencodeOutput(t, `{"verdict":"PASS","reasons":[]}`, func() *float64 { n := .05; return &n }()))
@@ -286,7 +286,7 @@ func TestOpencodeFallbackSkipsFreeModels(t *testing.T) {
 func TestOpencodeTranscript(t *testing.T) {
 	dir, scratch := t.TempDir(), t.TempDir()
 	writeFile(t, filepath.Join(dir, "opencode"), "#!/bin/sh\nprintf '%s' \"$SM_TEST_STDOUT\"\n", 0o755)
-	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SM_TEST_STDOUT", opencodeOutput(t, `{"verdict":"PASS","reasons":[]}`, func() *float64 { n := 0.1; return &n }()))
 	t.Setenv("SM_STATS", filepath.Join(dir, "stats.jsonl"))
 	p := defaultProfile("opencode")
