@@ -939,3 +939,17 @@ func TestWorktreeLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestUnfence(t *testing.T) {
+	for raw, want := range map[string]string{
+		"```json\n{\"a\":1}\n```": `{"a":1}`,
+		"```\n{\"a\":1}\n```":     `{"a":1}`,
+		"{\"a\":\"x```\"}":        "{\"a\":\"x```\"}",
+		"```":                     "```",
+		"text ```json\n{}\n```":   "text ```json\n{}\n```",
+	} {
+		if got := string(unfence([]byte(raw))); got != want {
+			t.Errorf("unfence(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}

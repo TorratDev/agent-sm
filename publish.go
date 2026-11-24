@@ -310,7 +310,7 @@ func diagnoseRun(dir, repo, exit string, profile Profile) (*Diagnosis, error) {
 	}
 	cmd.Env = append(cmd.Env, "SM_RESOLVED_CONFIG="+string(b))
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("the auditor failed: %s", tail(string(out), 300))
+		return nil, fmt.Errorf("the auditor failed: %s", auditFailure(string(out)))
 	}
 	var d Diagnosis
 	b, err = os.ReadFile(filepath.Join(dir, "diagnosis.json"))
@@ -318,6 +318,25 @@ func diagnoseRun(dir, repo, exit string, profile Profile) (*Diagnosis, error) {
 		err = json.Unmarshal(b, &d)
 	}
 	return &d, err
+}
+
+// auditFailure is why the `agent-sm diagnose` child failed: its last line, plus the reason the
+// last agent-error or invalid-result event gave, which the session's stats line would hide.
+func auditFailure(out string) string {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	msg := lines[len(lines)-1]
+	for i := len(lines) - 1; i >= 0; i-- {
+		var e struct{ Event, Err, Stderr string }
+		if json.Unmarshal([]byte(lines[i]), &e) != nil || (e.Event != "agent-error" && e.Event != "invalid-result") {
+			continue
+		}
+		if e.Err == "" {
+			e.Err = e.Stderr
+		}
+		msg += ": " + e.Err
+		break
+	}
+	return tail(msg, 600)
 }
 
 // runProvider is the agent a run used, from the provider its events record; "" when none does.

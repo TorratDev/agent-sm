@@ -238,12 +238,27 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 		logEvent(map[string]any{"event": "agent-error", "err": detail, "stderr": tail(diagnostics.String(), 1500)})
 		return Invalid
 	}
+	result = unfence(result)
 	if err := validateResult(result, step.Schema, out); err != nil {
 		logEvent(map[string]any{"event": "invalid-result", "err": err.Error()})
 		return Invalid
 	}
 	st.Result = tail(string(result), 1500)
 	return Ok
+}
+
+// unfence drops one markdown code fence around a whole answer: pi has no structured-output tool,
+// and some models (glm-5.3-flash) fence their JSON although the prompt asks for bare JSON.
+func unfence(b []byte) []byte {
+	s := string(b)
+	if !strings.HasPrefix(s, "```") || !strings.HasSuffix(s, "```") || len(s) < 6 {
+		return b
+	}
+	s = strings.TrimSuffix(s, "```")
+	if _, body, ok := strings.Cut(s, "\n"); ok { // drop the opening line, language tag included
+		return []byte(strings.TrimSpace(body))
+	}
+	return b
 }
 
 // piArgs builds the pi command line. The message is passed as an @file so long prompts never

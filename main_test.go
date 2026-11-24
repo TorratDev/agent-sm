@@ -438,3 +438,16 @@ func TestDiagnosis(t *testing.T) {
 		t.Fatalf("fileDiagnosis = %q, %v", url, err)
 	}
 }
+
+func TestAuditFailure(t *testing.T) {
+	out := `{"event":"invalid-result","err":"invalid character '` + "`" + `' looking for beginning of value","t":"x"}
+{"event":"agent","stats":{"outcome":"invalid","bash_commands":{"cat":1,"grep":1,"head":1,"ls":3,"mount":1,"tail":1}},"t":"x"}
+the auditor session ended invalid
+`
+	if got := auditFailure(out); !strings.HasPrefix(got, "the auditor session ended invalid: invalid character") {
+		t.Fatalf("auditFailure = %q", got)
+	}
+	if got := auditFailure("exec: no such file\n"); got != "exec: no such file" {
+		t.Fatalf("auditFailure = %q", got)
+	}
+}
