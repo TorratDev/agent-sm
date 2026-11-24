@@ -2,11 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -51,14 +48,6 @@ func newTranscript(c *Ctx, state State) (*agentTranscript, error) {
 	}
 	t := &agentTranscript{dir: dir, provider: settings.Provider, repo: c.Repo,
 		stdout: &transcriptOutput{File: stdout}, stderr: &transcriptOutput{File: stderr}}
-	if t.provider == "copilot" {
-		var id [16]byte
-		if _, err := rand.Read(id[:]); err != nil {
-			return nil, errors.Join(err, stdout.Close(), stderr.Close())
-		}
-		id[6], id[8] = id[6]&0x0f|0x40, id[8]&0x3f|0x80
-		t.sessionID = fmt.Sprintf("%x-%x-%x-%x-%x", id[:4], id[4:6], id[6:8], id[8:10], id[10:])
-	}
 	logEvent(map[string]any{"event": "transcript", "path": dir, "state": state.String(), "issue": c.Issue})
 	return t, nil
 }
@@ -79,39 +68,9 @@ func (t *agentTranscript) request(args []string, state State, cancel context.Can
 	})
 }
 
-func (t *agentTranscript) copilotMessages() error {
-	home := os.Getenv("COPILOT_HOME")
-	if home == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		home = filepath.Join(userHome, ".copilot")
-	} else if !filepath.IsAbs(home) {
-		home = filepath.Join(t.repo, home)
-	}
-	src, err := os.Open(filepath.Join(home, "session-state", t.sessionID, "events.jsonl"))
-	if err != nil {
-		return err
-	}
-	dst, err := os.OpenFile(filepath.Join(t.dir, "messages.jsonl"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return errors.Join(err, src.Close())
-	}
-	_, copyErr := io.Copy(dst, src)
-	return errors.Join(copyErr, src.Close(), dst.Close())
-}
-
 func (t *agentTranscript) finish(result Out) error {
 	err := errors.Join(t.stdout.err, t.stderr.err, t.stdout.Close(), t.stderr.Close())
 	var messagesErr error
-	if t.provider == "copilot" {
-		messagesErr = t.copilotMessages()
-		if messagesErr != nil {
-			// A CLI that never starts, or a stub, may not create its native session log.
-			logEvent(map[string]any{"event": "transcript-incomplete", "path": t.dir, "detail": messagesErr.Error()})
-		}
-	}
 	outcome := map[string]any{"outcome": result.String(), "finished": time.Now().UTC()}
 	if messagesErr != nil {
 		outcome["messages_error"] = messagesErr.Error()

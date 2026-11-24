@@ -10,7 +10,7 @@ import (
 
 // A rebase conflict goes to the resolve agent; its merge is staged and the rebase finishes.
 func TestResolveConflictsFinishesRebase(t *testing.T) {
-	useProfile(t, defaultProfile("claude"))
+	useProfile(t, defaultProfile("pi"))
 	repo, bin := t.TempDir(), t.TempDir()
 	run := func(args ...string) {
 		t.Helper()
@@ -38,8 +38,8 @@ func TestResolveConflictsFinishesRebase(t *testing.T) {
 		t.Fatal("setup: the rebase did not conflict")
 	}
 	// The fake agent merges both sides by hand, as the prompt asks.
-	writeFile(t, filepath.Join(bin, "claude"), "#!/bin/sh\nprintf 'main\\nwork\\n' > doc.md\n"+
-		`echo '{"type":"result","is_error":false,"total_cost_usd":0.01,"structured_output":{"status":"resolved","summary":"kept both"}}'`+"\n", 0o755)
+	writeFile(t, filepath.Join(bin, "pi"), "#!/bin/sh\nprintf 'main\\nwork\\n' > doc.md\n"+
+		`echo '{"type":"turn_end","message":{"role":"assistant","stopReason":"stop","content":[{"type":"text","text":"{\\"status\\":\\"resolved\\",\\"summary\\":\\"kept both\\"}"}],"usage":{"cost":{"total":0.01}}}}'`+"\n", 0o755)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GIT_AUTHOR_NAME", "t")
 	t.Setenv("GIT_AUTHOR_EMAIL", "t@t")
@@ -65,8 +65,8 @@ func TestResolveConflictsFinishesRebase(t *testing.T) {
 	if cmd.Run() == nil {
 		t.Fatal("setup: the second rebase did not conflict")
 	}
-	writeFile(t, filepath.Join(bin, "claude"), "#!/bin/sh\n"+
-		`echo '{"type":"result","is_error":false,"total_cost_usd":0.01,"structured_output":{"status":"resolved","summary":"done"}}'`+"\n", 0o755)
+	writeFile(t, filepath.Join(bin, "pi"), "#!/bin/sh\n"+
+		`echo '{"type":"turn_end","message":{"role":"assistant","stopReason":"stop","content":[{"type":"text","text":"{\\"status\\":\\"resolved\\",\\"summary\\":\\"done\\"}"}],"usage":{"cost":{"total":0.01}}}}'`+"\n", 0o755)
 	if resolveConflicts(c) {
 		t.Fatal("conflict markers were accepted")
 	}

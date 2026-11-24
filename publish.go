@@ -22,13 +22,7 @@ const (
 )
 
 func attribution() (string, string) {
-	switch settings.Provider {
-	case "claude":
-		return "Claude <noreply@anthropic.com>", "Generated with Claude Code via agent-sm."
-	case "opencode":
-		return "OpenCode <noreply@opencode.ai>", "Generated with OpenCode via agent-sm."
-	}
-	return "Copilot App <223556219+Copilot@users.noreply.github.com>", "Generated with GitHub Copilot via agent-sm."
+	return "pi <noreply@pi.dev>", "Generated with pi via agent-sm."
 }
 
 func gh(c *Ctx, args ...string) (string, bool) {

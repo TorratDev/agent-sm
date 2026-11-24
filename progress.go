@@ -86,7 +86,7 @@ func (p *progress) flush(force bool) {
 		"elapsed_s": int(time.Since(p.start).Seconds()), "tool_calls": p.calls,
 		"last_tool": p.lastTool, "last_command": p.lastCmd, "feed": p.feed,
 		"provider": settings.Provider, "usage_unit": settings.unit(), "usage_before_this_step": p.c.Cost,
-		"tool_telemetry_available": settings.Provider != "copilot", "updated": p.last.Format(time.RFC3339),
+		"tool_telemetry_available": true, "updated": p.last.Format(time.RFC3339),
 	}, "", "  ")
 	os.WriteFile(filepath.Join(p.c.Scratch, "status.json"), b, 0o644)
 }

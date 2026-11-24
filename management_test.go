@@ -32,7 +32,7 @@ type fakeTrackers struct {
 
 func testManager(t *testing.T) (*manager, *fakeTrackers) {
 	t.Helper()
-	p := defaultProfile("copilot")
+	p := defaultProfile("pi")
 	p.Management = ManagementConfig{Mode: "service", Host: "github.com", Repo: "owner/repo", WritersDisabled: true,
 		Identities: map[string]string{"dev": "account"}, GitHubAssignee: "dev"}
 	p.Jira = JiraConfig{Mode: "service", Site: "https://jira.example", Project: "DEMO", Epic: "DEMO-1",
@@ -683,10 +683,7 @@ func TestManagementProfileAndCredentialIsolation(t *testing.T) {
 	if strings.Contains(strings.Join(cleanAgentEnv(), "\n"), "write-token") {
 		t.Fatal("credentials leaked")
 	}
-	if strings.Contains(configuredAllow(Plan), "gh issue") {
+	if strings.Contains(strings.Join(sandboxEnv(), "\n"), "write-token") {
 		t.Fatal("worker tracker access retained")
-	}
-	if !strings.Contains(strings.Join(copilotArgs(Plan, "", "usage", 1), " "), "--deny-tool=shell(rtk proxy gh:*)") {
-		t.Fatal("RTK tracker bypass")
 	}
 }

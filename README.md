@@ -2,7 +2,7 @@
 
 A state machine that takes one GitHub issue to a reviewed branch. The program owns the loop:
 each step returns a typed outcome, one table (`next()` in `main.go`) decides the transition, and
-agents (`copilot -p` by default, `claude -p`, or `opencode run`) only run inside single steps. Every step is declared once in the `steps`
+agents (`pi`, with models from any provider pi is configured for) only run inside single steps. Every step is declared once in the `steps`
 table in `main.go`: its function, outcomes, role prompt, output schema, allow list and model.
 
     prepare -> plan -> investigate (one session per unit) -> execute -> check -> review -> publish
@@ -55,13 +55,13 @@ The page marks previous work as kept; web attempts also retain separate logs. Pu
 refuses to overwrite a remote branch that appeared after the name was selected.
 
 The repo's working tree must be clean; the run creates an available `sm/issue-<n>` branch. It needs
-`copilot`, `claude`, or `opencode`, plus `git` and `gh` on the PATH, authenticated independently of the desktop
+`pi` and `bwrap` (Linux) or `podman` with the `agent-sm-pi` image (Windows) on the PATH, plus `git` and `gh`, authenticated independently of the desktop
 app, plus the target project's build/test tools. Checks must be configured; there is no
 implicit Cargo default. `stats` and `allow` do not require a project profile.
 
 With no arguments or config, `go run .` starts the web UI in the current Git repo. It detects the
 language of each selected repo (Go from `go.mod`, Rust from `Cargo.toml`, .NET from a root `*.sln`
-or `*.slnx`) and runs that language's checks, and prefers the installed Copilot CLI, then Claude, then OpenCode.
+or `*.slnx`) and runs that language's checks, and 
 Use **Browse folders** to navigate local folders and select a Git working tree, or enter its path
 manually. The picker validates Git before enabling selection and resolves subfolders to their
 repository root; linked worktrees are supported too. Non-Git folders and unreadable/missing paths
@@ -80,21 +80,19 @@ in place; delete it before running the issue again.
 |---|---|---|
 | `SM_PUBLISH` | empty | empty: stop at a local staged branch. `pr`: commit, rebase, push, open a draft PR. `merge`: also merge it. A rebase conflict goes to a `resolve` agent (Haiku) that merges the conflicted files; the checks then rerun, and markers left or a `blocked` answer abort the rebase. |
 | `SM_BASE` | `origin/main` | Branch that worktrees start from and publish rebases onto. |
-| `SM_PROVIDER` | `copilot` | Runner: `copilot`, `claude`, or `opencode`. |
-| `SM_SESSION_LIMIT` | Copilot: `100`; Claude/OpenCode: `2` | Session limit in the provider's native units: Copilot AI credits (minimum 100) or Claude/OpenCode USD. |
-| `SM_RUN_LIMIT` | Copilot: `500`; Claude/OpenCode: `20` | Run limit in the same native units; `0` disables it. A nonzero Copilot limit must be at least 100. Unknown usage prevents another step under a run limit. |
+| `SM_PROVIDER` | `pi` | The only runner. Any other value is rejected. |
+| `SM_SANDBOX` | `bwrap` on Linux, `podman` on Windows | How agent sessions are isolated: `bwrap` or `podman`. |
+| `SM_SANDBOX_IMAGE` | `agent-sm-pi` | podman image the agent runs in. |
 | `SM_CONCURRENCY` | `1` | Starting value of the page's **In parallel** field: how many queued issues `serve` runs at once (1–16, across all selected repositories). Choosing another number and pressing Run changes it for the whole server; lowering it lets running jobs finish and holds new ones back. Each job gets its own `<n>-sm` worktree and branch; one issue never runs twice at once, and a queued issue that is already running waits. Session and run limits apply to each job, so the total spend can reach this many times the run limit. Stop and Ctrl-C end every running job. Profile field: `concurrency`. |
-| `SM_BUDGET`, `SM_RUN_BUDGET` | none | Legacy dollar-limit aliases for Claude and OpenCode. Rejected for Copilot rather than converted to credits. |
+| `SM_SESSION_LIMIT` | `2` | Session limit in USD (pi reports cost per model turn). |
+| `SM_RUN_LIMIT` | `20` | Run limit in USD; `0` disables it. Unknown usage prevents another step under a run limit. |
 | `SM_TIMEOUT` | `60` | Minutes before an agent session and its child processes are killed. |
-| `SM_MODEL_<STATE>` | Copilot: `auto`; Claude: sonnet 5.5, opus 5.5 for review, haiku 5.5 for `SUMMARIZE` (the follow-up body); sonnet 5.5 for `DIAGNOSE` (the failed-run audit); haiku 5.5 for `RESOLVE` (publish rebase conflicts); OpenCode: `opencode/deepseek-v4.1-flash-free`; plan/review prefer `opencode/glm-5.3-flash` when installed | Explicit CLI model ID per step. The page offers the selected provider's models as suggestions, while keeping the value editable. The web input wins for queued runs. |
+| `SM_MODEL_<STATE>` | `opencode-go/deepseek-v4.1-flash` for working steps; `opencode-go/glm-5.3-flash` for plan, review and diagnose | pi model per step as `provider/model`, for example `anthropic/claude-sonnet-5-5`. The catalog is `piModels` in `pi.go`. The web input wins for queued runs. |
 | `SM_CHECKS` | profile (required) | Check commands, one per line. Empty checks fail configuration. |
 | `SM_FMT` | profile or none | Formatter run before staging/checks; failure is explicit. Setting `SM_CHECKS` without `SM_FMT` disables the profile formatter. |
-| `SM_ALLOW_FILE` | none | Claude-only JSON `{"state": "tools"}`; invalid files fail startup. Prefer profile `commands` for portable shell tools. |
-| `SM_EXTRA_ALLOW` | none | Claude-only allow entries added to every agent step. |
 | `SM_ADD_DIRS` | none | Comma-separated directories agents may read outside the repo. |
 | `SM_NOTES_DIR` | none | Operator notes added to dispatches: `all.md`, or `<role>.md` for one step. |
-| `SM_AUDIT` | on for Claude (off in service mode and for Copilot/OpenCode) | Claude only: load every tool and bypass permissions (outward commands stay denied) to measure tool use. On by default while runs still error; `SM_AUDIT=0` or `"audit": false` turns it off. Not a sandbox. |
-| `SM_TRANSCRIPTS` | `true` | Local transcript saving for every provider (`true`/`false` or `1`/`0`), on by default while runs still error. A capture failure is logged and never fails the step. Independent of permission audit. |
+| `SM_TRANSCRIPTS` | `true` | Local transcript saving (`true`/`false` or `1`/`0`), on by default while runs still error. A capture failure is logged and never fails the step. |
 | `SM_GHIDRA_COPY` | `none` | Legacy-profile-only Ghidra project copy. |
 | `SM_EXPORT` | `~/rescue-re/export` | Legacy-profile-only export; generic runs do not inspect it. |
 | `SM_PROBE_PYTHON` | `~/venvs/desmume/bin/python` | Legacy-profile-only py-desmume interpreter. Replaces the path in the role prompts and the allow list (e.g. `C:\venvs\desmume\Scripts\python.exe` on Windows). |
@@ -110,16 +108,11 @@ A session that hits `SM_TIMEOUT` returns `timeout`; an observed native limit exh
 returns `over-budget`. Both end with `gave-up`. Unknown/missing usage is never reported as
 free and stops a bounded run before its next step. Unknown CLI errors fail closed as invalid,
 not as completed work. Native billing limits can be soft/provider-enforced, not exact money caps.
-Copilot's 100-credit minimum is a per-step limit, not a required charge. If fewer than 100
-credits remain under the run limit, the next Copilot step stops instead of exceeding that limit.
-Explicit lower limits are rejected; changing providers on the page uses that provider's defaults
-rather than interpreting credits as dollars or vice versa.
-
 ## Profiles and tools
 
 Pass an explicit operator-owned JSON file; configuration is never auto-discovered in a target
 branch. See [Go](examples/go.json), [.NET unit testing](examples/dotnet.json), [Rust](examples/rust.json), and
-[legacy Claude/Rust/Ghidra](examples/claude-legacy.json). Copy and adapt the examples outside
+the legacy Rust/Ghidra profile (`legacy_rust_ghidra`). Copy and adapt the examples outside
 the target checkout. Precedence is defaults, profile, environment, then validated web overrides.
 Relative `notes_dir` and `add_dirs` paths resolve against the profile's directory. Queued runs
 receive an immutable resolved snapshot, including models and limits.
@@ -127,16 +120,15 @@ receive an immutable resolved snapshot, including models and limits.
 Supported fields are `provider`, `models` (state to CLI model ID), `checks`, `base_checks` (what
 `prepare` runs on the untouched base; default `checks`), `format`,
 `required_test_reports`, `session_limit`, `run_limit`, `timeout_minutes`, `commands`,
-`notes_dir`, `add_dirs`, `links` (gitignored repo files such as a ROM dump, symlinked from the main checkout into each worktree; missing ones are skipped), `base`, `jira`, `management`, `transcripts`, `concurrency`, and the Claude-specific `claude_allow`,
-`claude_extra_allow`, `audit`, and `legacy_rust_ghidra`. Unknown fields fail startup.
-The page can select Copilot, Claude, or OpenCode; switching providers uses that provider's limit defaults,
-while provider-specific options still require a compatible profile.
+`notes_dir`, `add_dirs`, `links` (gitignored repo files such as a ROM dump, symlinked from the main checkout into each worktree; missing ones are skipped), `base`, `jira`, `management`, `transcripts`, `concurrency`, and
+`legacy_rust_ghidra`. Unknown fields fail startup.
+The only provider is `pi`; `"provider"` must be `"pi"`.
 
 `checks` are trusted shell commands run deterministically in the worktree, including after a
 publish rebase. They have timeout/Stop cancellation and must not mutate the checked candidate.
 `format` runs before staging. `commands` separately grants agent access per role, for example
 `{"execute":["dotnet build","dotnet test"]}`. Prefixes use plain command/subcommand words,
-not shell expressions. They are translated to each runner's permission syntax and RTK forms;
+not shell expressions. They are translated to pi's tool list;
 granting `dotnet test` does not grant every `dotnet` command. Program-owned GitHub/history
 mutations stay outside worker command profiles. Permission lists are not an OS sandbox:
 execute untrusted repositories/tests in a disposable, appropriately isolated environment.
@@ -151,30 +143,36 @@ fail validation. Enable equivalent evidence for every additional required test s
 the target project's prerequisites; agent-sm does not install them.
 
 Generic roles read the target's applicable instructions; use shared `AGENTS.md` and explicit
-role notes for portable guidance. Copilot also loads its normal repository instructions.
-Do not pass app configuration as an agent-sm profile: `.github/github-app.yml` remains owned
-by the Copilot app. Old rescue-specific prompts are selected only by `legacy_rust_ghidra`.
+role notes for portable guidance.
+Do not pass app configuration as an agent-sm profile. Old rescue-specific prompts are selected only by `legacy_rust_ghidra`.
 
-OpenCode defaults to DeepSeek Flash. The decision-heavy plan and review steps prefer OpenCode's `opencode/glm-5.3-flash` when the installed catalog offers it (not Jev: decision models such as `jev-1.13-free` cannot run an agent step); otherwise they stay on DeepSeek Flash. Short names such as `deepseek-v4.1-flash-free` and `glm-5.3-flash` are expanded to their provider-qualified IDs. When OpenCode refuses a model because a free allowance or rate limit is spent, the step retries with up to three other catalog models from the same coding families (GLM Flash, DeepSeek Flash/Pro, beam). A free-usage refusal skips `-free` models, since they share one allowance, and moves to a provider-backed model instead of retrying the same one.
+Every step runs as `pi -p --mode json` with `--no-extensions --no-skills --no-mcp`, inside a
+sandbox (`sandbox.go`). Every step gets `read,grep,find,ls,bash`; steps that edit also get
+`edit,write`. The sandbox, not a command list, limits what the agent reaches:
 
-OpenCode runs each step with a generated private agent definition derived from the state's allow list, so writes and shell commands stay restricted. Its `--format json` event stream supplies the final answer, tool calls, session ID, token counts, and per-step cost; the answer still goes through the same strict local JSON validation. It uses `--standalone`, disables project configuration, and keeps the target checkout's own OpenCode config from weakening permissions.
+- **Linux: bubblewrap (`bwrap`)**, no image. The host is mounted read-only with an empty home,
+  `/tmp` and `/run`. Read-only again inside: the `PATH` directories under home, `GOROOT` when it is
+  under home, `~/.rustup`, `~/.dotnet`, pi's install and login (`~/.pi/agent`), `add_dirs` and the
+  prompt files. The worktree is the only writable host directory, and only for steps that edit;
+  anything written elsewhere vanishes with the sandbox. The Go module and build caches,
+  Cargo's registry and git caches and NuGet packages: the agent writes only agent-sm's own cache
+  (`<state>/agent-sm/sandbox-cache`), never the host's, so its downloads persist between steps and it
+  cannot change what the host's checks build with. With bwrap 0.11 or later the host's caches are the
+  read-only layer underneath (an overlay), so nothing the host already downloaded is fetched again.
+- **Windows: podman**, image `agent-sm-pi` (`SM_SANDBOX_IMAGE` to change it). Build it once with
+  `podman build -t agent-sm-pi sandbox`, adding the project's toolchain with `--build-arg TOOLCHAIN=go`
+  (or `"cargo rust"`, `dotnet9-sdk`). The worktree is mounted at `/work`, pi's `auth.json` read-only.
 
-Copilot uses `--output-format=json` JSONL events, strict local JSON validation, and
-`--usage-output-file` for native credits. The last complete main-agent response is decoded
-without Markdown rendering or line wrapping, and requires a successful terminal `result`
-event. Tool/sub-agent messages and partial deltas cannot substitute for that response;
-prose, code fences, malformed JSON and off-schema content are still rejected, not repaired.
-Its live feed currently shows start/end, not tool calls; unavailable model/tool/turn/usage
-data is marked unknown. Claude retains its stream feed, and OpenCode exposes tool calls,
-turns, tokens, and cost from its JSON events. All runners reject missing, duplicate,
-malformed, or off-schema result fields and failed subprocesses. Stats separate providers and units; old Claude stats remain readable.
-`allow` emits Claude syntax only; it does not infer a Copilot policy from absent telemetry.
+Neither sandbox has `GH_TOKEN`, an SSH agent or the `gh` login, so only agent-sm can push, open PRs
+or edit issues. The network stays open: pi needs the model provider. The role prompt goes in
+`--append-system-prompt` and the task in an `@file`, so long prompts stay out of argv. The final
+answer comes from the last complete assistant turn (`stopReason: "stop"`) and goes through strict
+local JSON validation. Cost is the sum of pi's per-turn `usage.cost.total` in USD; a run with
+unreported cost counts as unknown usage.
 
-Worker MCP servers, delegation, and broad permission bypasses are not enabled for Copilot:
-its visible tools are explicitly restricted to file/search/shell tools. Add trusted command
-tools through `commands`; Jira uses the separate program-owned transport below. The runner
-does not pass `--trust-folder` or alter your saved CLI trust settings. Review inherited CLI
-configuration/hooks and use a clean automation account for untrusted targets.
+The model catalog in `pi.go` lists the Claude models pi ships, OpenCode Go, the OpenCode CLI catalog
+(`opencode/*`, `nvidia/*`) and the Copilot CLI catalog (`github-copilot/*`). pi only runs a model whose
+provider is configured in its own `models.json`; `pi --list-models` shows which ones are.
 
 ## GitHub and linked Jira
 
@@ -386,8 +384,6 @@ and rejects unknown ones. Only localhost `Host`/`Origin` headers are accepted.
 - Transcripts are on by default. To turn them off, untick **Save transcripts** before Run, set `"transcripts": false` in a profile, or use `SM_TRANSCRIPTS=0`. Each agent call/retry gets a separate private directory at `<scratch>/transcripts/<provider>-<step>-<unique>/`; its path is recorded in `events.jsonl`.
   - `request.json`: exact CLI arguments (including prompts), working directory, schema and start time; no environment dump.
   - `stdout.log` / `stderr.log`: raw CLI streams captured before JSON validation, including malformed output. Claude's stdout includes its message/tool stream and native usage.
-  - OpenCode keeps the generated private `opencode.json` agent definition next to the raw streams, so the effective permissions can be inspected.
-  - Copilot also retains `usage.json` and copies its native session events to `messages.jsonl` after the subprocess exits. This requires CLI support for `--session-id`, `--no-remote-export` and the documented local session-state layout. Session export to GitHub is disabled for these captured Copilot calls; no gist/share upload is requested.
   - `result.json`: agent-call outcome, finish time and any capture error. A logging failure prevents successful workflow continuation, even if the provider itself returned a valid result; provider usage statistics still describe that provider call.
   - Captures contain only messages exposed by the CLI, not hidden model reasoning. Cancellation, output limits, startup failure or disk errors can leave partial captures; a missing native session log is recorded explicitly. Transcripts are not reconstructed for past runs.
   - Transcripts can contain source code, secrets or sensitive tool output. Directories are private (`0700`), app-created files use `0600`, and nothing expires automatically. Review/delete them when no longer needed; Copilot also retains its original local session history separately. This does **not** enable Claude's permission-bypassing **permission audit**.
@@ -397,8 +393,8 @@ and rejects unknown ones. Only localhost `Host`/`Origin` headers are accepted.
 
 ## Platforms
 
-Linux, macOS and Windows. Platform differences are isolated in `filelock_unix.go` /
-`filelock_windows.go` (journal locking: `flock` vs `LockFileEx`) and `proc_unix.go` /
+Linux and Windows; macOS is not supported. Platform differences are isolated in `filelock_linux.go` /
+`filelock_windows.go` (journal locking: `flock` vs `LockFileEx`) and `proc_linux.go` /
 `proc_windows.go` (process groups and group kill: `setpgid`/`kill(-pid)` vs
 `CREATE_NEW_PROCESS_GROUP`/`taskkill /T`/`CTRL_BREAK_EVENT`). Windows caveats:
 
@@ -408,12 +404,12 @@ Linux, macOS and Windows. Platform differences are isolated in `filelock_unix.go
   timeout ends the session anyway.
 - `SM_LINKS` symlinks need Windows Developer Mode (or an elevated process).
 - Tests that fake providers with `#!/bin/sh` scripts self-skip on Windows; run the
-  full suite on Linux, macOS or WSL.
+  full suite on Linux or WSL.
 
 Portability rules for the whole repository:
 
 - No machine-specific paths in code: every location has an environment override
-  (`SM_SCRATCH_ROOT`, `SM_STATS`, `SM_EXPORT`, `SM_PROBE_PYTHON`, `COPILOT_HOME`, ...) and a
+  (`SM_SCRATCH_ROOT`, `SM_STATS`, `SM_EXPORT`, `SM_PROBE_PYTHON`, ...) and a
   default derived from the home directory. Run history defaults to
   `$XDG_STATE_HOME/agent-sm`, else `~/.local/state/agent-sm` on every OS (on Windows,
   `%USERPROFILE%\.local\state\agent-sm`).
@@ -421,22 +417,20 @@ Portability rules for the whole repository:
   cross-compiled (`GOOS=windows GOARCH=amd64 go build`) and copied to another machine.
 - `.gitattributes` keeps LF line endings on every checkout, so embedded prompts, `gofmt`
   and shell scripts behave the same on Windows.
-- Helper scripts (`scripts/`, `.claude/skills/*/*.sh`) need only bash 3.2 and tools present on
-  both Linux and macOS; on Windows run them from Git Bash or WSL.
+- Helper scripts (`scripts/`, `.claude/skills/*/*.sh`) need bash and standard Linux tools;
+  on Windows run them from Git Bash or WSL.
 
 ## Tests
 
 GitHub Actions runs formatting checks, `go vet`, race-enabled tests, and a build on pull
 requests and pushes to `main`, using the Go version in `go.mod`. It also vets and
-cross-compiles for Linux, macOS and Windows (amd64 and arm64), and runs the test suite
-natively on macOS and Windows. Live agent smoke tests
+cross-compiles for Linux and Windows (amd64 and arm64), and runs the test suite
+natively on Windows. Live agent smoke tests
 remain opt-in and are not run in CI.
 
     go vet ./... && go test ./...
     scripts/test-affected.sh                             # only tests affected by the diff vs origin/main
-    SM_SMOKE=1 go test -run Smoke -v                     # opt-in: one real Copilot session
-    SM_SMOKE=1 SM_PROVIDER=claude go test -run Smoke -v  # opt-in: one real Claude session
-    SM_SMOKE=1 SM_PROVIDER=opencode go test -run Smoke -v # opt-in: one real OpenCode session
+    SM_SMOKE=1 go test -run Smoke -v                     # opt-in: one real pi session
 
 Normal tests use fake CLIs and temporary repositories; they do not call paid agents or mutate Jira.
 CLI flags/usage follow the installed CLI's help. Live provider and target-.NET compatibility

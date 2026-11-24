@@ -126,7 +126,7 @@ esac
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("JIRA_USER_EMAIL", "test@example.invalid")
 	t.Setenv("JIRA_API_TOKEN", "test-token")
-	p := defaultProfile("copilot")
+	p := defaultProfile("pi")
 	p.Jira = JiraConfig{Mode: "actions", Site: "https://example.atlassian.net", APIBase: srv.URL, InProgress: "In Progress", InReview: "In Code Review", Delivered: "Ready for Deploy"}
 	useProfile(t, p)
 	if err := p.Jira.validate(); err != nil {

@@ -1,5 +1,5 @@
 {
-  "provider": "copilot",
+  "provider": "pi",
   "checks": ["go vet ./...", "go test ./..."],
   "jira": {
     "mode": "actions",

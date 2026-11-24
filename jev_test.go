@@ -81,7 +81,7 @@ func TestDuplicateIssueNeedsAKey(t *testing.T) {
 }
 
 func TestFollowUpCommentsOnADuplicate(t *testing.T) {
-	useProfile(t, defaultProfile("copilot"))
+	useProfile(t, defaultProfile("pi"))
 	dir := t.TempDir()
 	log := filepath.Join(dir, "gh.log")
 	writeFile(t, filepath.Join(dir, "gh"), `#!/bin/sh

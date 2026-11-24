@@ -41,17 +41,12 @@ func report(jsonl []byte) string {
 		var sample []string
 		models := map[string]int{}
 		killed, unknown := 0, 0
-		credits := list[0].Provider == "copilot"
 		for _, st := range list {
 			models[st.Model]++
 			if st.Killed {
 				killed++
 			}
 			if st.UsageUnknown || st.Killed {
-				unknown++
-			} else if credits && st.Credits != nil {
-				cost += *st.Credits
-			} else if credits {
 				unknown++
 			} else {
 				cost += st.CostUSD
@@ -80,13 +75,8 @@ func report(jsonl []byte) string {
 			}
 		}
 		n := len(list)
-		if credits {
-			fmt.Fprintf(&b, "%s: %d sessions, %.3f known credits, %d unknown-usage sessions; tool/turn telemetry unavailable\n",
-				state, n, cost, unknown)
-		} else {
-			fmt.Fprintf(&b, "%s: %d sessions, $%.3f known total, %d unknown-usage sessions, avg cache-create %d, cache-read %d, output %d, turns %.1f\n",
-				state, n, cost, unknown, create/n, read/n, out/n, float64(turns)/float64(n))
-		}
+		fmt.Fprintf(&b, "%s: %d sessions, $%.3f known total, %d unknown-usage sessions, avg cache-create %d, cache-read %d, output %d, turns %.1f\n",
+			state, n, cost, unknown, create/n, read/n, out/n, float64(turns)/float64(n))
 		var ml []string
 		for m, k := range models {
 			if m == "" {
@@ -96,9 +86,6 @@ func report(jsonl []byte) string {
 		}
 		sort.Strings(ml)
 		fmt.Fprintf(&b, "  models: %s\n", strings.Join(ml, ", "))
-		if credits {
-			continue
-		}
 		if killed > 0 {
 			fmt.Fprintf(&b, "  note: %d killed sessions reported no cost; the total above leaves them out\n", killed)
 		}
@@ -126,7 +113,7 @@ func report(jsonl []byte) string {
 		}
 		sort.Strings(bl)
 		fmt.Fprintf(&b, "  bash commands: %s\n", strings.Join(bl, ", "))
-		fmt.Fprintf(&b, "  ALLOW suggestion: %s\n", suggestAllow(strings.TrimPrefix(state, "claude/"), called, bash))
+		fmt.Fprintf(&b, "  ALLOW suggestion: %s\n", suggestAllow(state, called, bash))
 		fmt.Fprintf(&b, "  TRIM tools (listed, never called) %d: %s\n", len(unused), strings.Join(unused, ", "))
 
 		if len(denied) > 0 {
@@ -178,9 +165,6 @@ func allowJSON(jsonl []byte) string {
 		var st Stats
 		if json.Unmarshal([]byte(line), &st) != nil || st.State == "" {
 			continue
-		}
-		if st.Provider != "" && st.Provider != "claude" {
-			continue // Copilot command policy is configured explicitly, not inferred.
 		}
 		if called[st.State] == nil {
 			called[st.State], bash[st.State] = map[string]int{}, map[string]int{}

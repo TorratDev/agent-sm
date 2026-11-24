@@ -38,7 +38,7 @@ func languageProfile(name string) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	p := defaultProfile("copilot")
+	p := defaultProfile("pi")
 	if err := decodeStrict(data, &p); err != nil {
 		return Profile{}, fmt.Errorf("language profile %q: %w", name, err)
 	}
@@ -48,26 +48,11 @@ func languageProfile(name string) (Profile, error) {
 	return p, nil
 }
 
-func autoProvider() string {
-	if _, err := exec.LookPath("copilot"); err == nil {
-		return "copilot"
-	}
-	if _, err := exec.LookPath("claude"); err == nil {
-		return "claude"
-	}
-	if _, err := exec.LookPath("opencode"); err == nil {
-		return "opencode"
-	}
-	return "copilot"
-}
-
 // installedProviders says which agent CLIs are on PATH, for the page's agent switch.
 func installedProviders() map[string]bool {
 	m := map[string]bool{}
-	for _, name := range []string{"claude", "copilot", "opencode"} {
-		_, err := exec.LookPath(name)
-		m[name] = err == nil
-	}
+	_, err := exec.LookPath("pi")
+	m["pi"] = err == nil
 	return m
 }
 
@@ -91,7 +76,7 @@ func autoLanguageProfile(repo string) (Profile, error) {
 			return languageProfile("dotnet")
 		}
 	}
-	p := defaultProfile("copilot")
+	p := defaultProfile("pi")
 	p.Checks = []string{"git diff --check"}
 	return p, nil
 }
@@ -101,11 +86,6 @@ func autoProfile(repo string) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	provider := autoProvider()
-	if v := os.Getenv("SM_PROVIDER"); v != "" {
-		provider = v
-	}
-	p.selectProvider(provider)
 	if err := p.applyLimitEnv(); err != nil {
 		return p, err
 	}
@@ -643,7 +623,7 @@ func serve(issue, addr, repo string) error {
 			for _, i := range list {
 				if !seen[i] {
 					seen[i] = true
-					jobs = append(jobs, Job{Issue: i, Repo: run.repo, Publish: req.Publish, Audit: req.Audit, Budget: req.Budget,
+					jobs = append(jobs, Job{Issue: i, Repo: run.repo, Publish: req.Publish, Budget: req.Budget,
 						Models: req.Models, Provider: profile.Provider, Profile: &profile})
 				}
 			}
@@ -801,7 +781,6 @@ type runRequest struct {
 	Repo        string            `json:"repo,omitempty"`
 	Language    string            `json:"language,omitempty"`
 	Publish     string            `json:"publish"`
-	Audit       bool              `json:"audit"`
 	Transcripts *bool             `json:"transcripts,omitempty"`
 	Budget      string            `json:"budget"`
 	Models      map[string]string `json:"models"`
@@ -812,13 +791,10 @@ type runRequest struct {
 func queueSnapshot(r *Runner, p Profile) map[string]any {
 	snap := r.Snapshot()
 	snap["provider"], snap["models"] = p.Provider, agentModelsFor(p)
-	snap["model_options"], snap["providers"] = modelOptions(p.Provider), installedProviders()
-	snap["transcripts"], snap["audit"] = p.Transcripts, p.Audit
+	snap["model_options"], snap["providers"] = modelOptions(), installedProviders()
+	snap["transcripts"] = p.Transcripts
 	snap["session_limit"], snap["usage_unit"] = p.SessionLimit, p.unit()
 	snap["run_limit"], snap["min_session_limit"] = p.RunLimit, 0.01
-	if p.Provider == "copilot" {
-		snap["min_session_limit"] = minCopilotCredits
-	}
 	return snap
 }
 
@@ -841,8 +817,8 @@ func queuedProfile(req runRequest) (Profile, error) {
 		p.Checks, p.TestReports, p.Format, p.Commands = language.Checks, language.TestReports, language.Format, language.Commands
 		p.Legacy = language.Legacy
 	}
-	if req.Provider != "" {
-		p.selectProvider(req.Provider)
+	if req.Provider != "" && req.Provider != "pi" {
+		return Profile{}, fmt.Errorf("provider must be pi")
 	}
 	b, err := json.Marshal(p)
 	if err != nil {
@@ -855,7 +831,6 @@ func queuedProfile(req runRequest) (Profile, error) {
 	if resolved.Models == nil {
 		resolved.Models = map[string]string{}
 	}
-	resolved.Audit = req.Audit
 	if req.Transcripts != nil {
 		resolved.Transcripts = *req.Transcripts
 	}

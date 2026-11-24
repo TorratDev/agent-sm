@@ -5,7 +5,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -13,7 +12,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -113,7 +111,6 @@ type Step struct {
 	// Agent steps only (Role != ""):
 	Role   string // prompts/<Role>.md
 	Schema string // JSON schema of the result; must match the struct the step decodes into
-	Allow  string // default tools; SM_ALLOW_FILE replaces it, SM_EXTRA_ALLOW adds to it
 	Model  string // default model; SM_MODEL_<STATE> (e.g. SM_MODEL_PLAN=haiku) or the page's choice overrides
 	Edit   bool   // the step may edit files
 }
@@ -138,15 +135,6 @@ func shProbe() string {
 	return "Bash(" + probePython() + ":*),Bash(python3:*),Bash(python:*),Bash(export:*),Bash(mkdir:*),Bash(sha1sum:*),Bash(shasum:*)"
 }
 
-// Default models, as rust-mm's spawn.sh assigns them (prompts/original/orchestrator.md, Roles):
-// sonnet for the working roles, opus for the reviewer. Never the CLI's own default, which
-// follows the user's account and can be the most expensive model.
-const (
-	sonnet = "claude-sonnet-5-5"
-	opus   = "claude-opus-5-5"
-	haiku  = "claude-haiku-5-5" // small text jobs, such as a follow-up body
-)
-
 // stepModel is the model a step runs on: SM_MODEL_<STATE> if set, else the step's default.
 func stepModel(st Step) string {
 	return settings.model(st)
@@ -158,36 +146,29 @@ func init() { // not a composite literal at package level: the step functions re
 	steps = [numSteps]Step{
 		Prepare: {Name: "prepare", Run: prepare, Outs: []Out{Ok, Blocked, Fail}},
 		Plan: {Name: "plan", Run: plan, Outs: []Out{Ok, Direct, Blocked, Split, Invalid, Timeout, OverBudget},
-			Role: "planner", Model: sonnet,
-			Schema: `{"type":"object","properties":{"status":{"enum":["plan","blocked"]},"objective":{"type":"string"},"points":{"type":"array","items":{"type":"string"}},"points_derived":{"type":"boolean"},"files":{"type":"array","items":{"type":"string"}},"verification":{"type":"string"},"needs_investigation":{"type":"boolean"},"fits_one_pr":{"type":"boolean"},"units":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"points":{"type":"array","items":{"type":"string"}}},"required":["id","title","points"],"additionalProperties":false}}},"required":["status","objective","points","points_derived","files","verification","needs_investigation","fits_one_pr","units"],"additionalProperties":false}`,
-			Allow:  "Read,Grep,Glob," + shRead + ",Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*)"},
+			Role: "planner", Model: piDecisionModel,
+			Schema: `{"type":"object","properties":{"status":{"enum":["plan","blocked"]},"objective":{"type":"string"},"points":{"type":"array","items":{"type":"string"}},"points_derived":{"type":"boolean"},"files":{"type":"array","items":{"type":"string"}},"verification":{"type":"string"},"needs_investigation":{"type":"boolean"},"fits_one_pr":{"type":"boolean"},"units":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"points":{"type":"array","items":{"type":"string"}}},"required":["id","title","points"],"additionalProperties":false}}},"required":["status","objective","points","points_derived","files","verification","needs_investigation","fits_one_pr","units"],"additionalProperties":false}`},
 		Investigate: {Name: "investigate", Run: investigate, Outs: []Out{Ok, More, Blocked, Invalid, Timeout, OverBudget},
-			Role: "investigator", Model: sonnet,
-			Schema: `{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"}},"required":["status","evidence","handoff"],"additionalProperties":false}`,
-			Allow:  "Read,Grep,Glob," + shRead + ",Bash(git log:*),Bash(git grep:*),Bash(git status:*),Bash(gh issue view:*)"},
+			Role: "investigator", Model: piWorkModel,
+			Schema: `{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"}},"required":["status","evidence","handoff"],"additionalProperties":false}`},
 		Execute: {Name: "execute", Run: execute, Outs: []Out{Ok, Blocked, Fail, Invalid, Timeout, OverBudget},
-			Role: "executor", Model: sonnet,
+			Role: "executor", Model: piWorkModel,
 			Schema: `{"type":"object","properties":{"status":{"enum":["done","partial","blocked"]},"summary":{"type":"string"}},"required":["status","summary"],"additionalProperties":false}`,
-			Allow:  "Read,Grep,Glob,Edit,Write," + shRead + ",Bash(git diff:*),Bash(git status:*)",
 			Edit:   true},
 		Check: {Name: "check", Run: check, Outs: []Out{Pass, Fail}},
 		Review: {Name: "review", Run: review, Outs: []Out{Pass, Fail, Split, Escalate, Invalid, Timeout, OverBudget},
-			Role: "reviewer", Model: opus,
-			Schema: `{"type":"object","properties":{"verdict":{"enum":["PASS","REVISE","SPLIT","ESCALATE"]},"reasons":{"type":"array","items":{"type":"string"}},"remaining":{"type":"array","items":{"type":"string"}}},"required":["verdict","reasons"],"additionalProperties":false}`,
-			Allow:  "Read,Grep,Glob," + shRead + ",Bash(git diff:*),Bash(git log:*)"},
+			Role: "reviewer", Model: piDecisionModel,
+			Schema: `{"type":"object","properties":{"verdict":{"enum":["PASS","REVISE","SPLIT","ESCALATE"]},"reasons":{"type":"array","items":{"type":"string"}},"remaining":{"type":"array","items":{"type":"string"}}},"required":["verdict","reasons"],"additionalProperties":false}`},
 		Publish: {Name: "publish", Run: publish, Outs: []Out{Ok, Blocked, Fail}},
 		Summarize: {Name: "summarize", Outs: []Out{Ok, Invalid, Timeout, OverBudget},
-			Role: "summarizer", Model: haiku,
-			Schema: `{"type":"object","properties":{"body":{"type":"string"}},"required":["body"],"additionalProperties":false}`,
-			Allow:  "Read"},
+			Role: "summarizer", Model: piWorkModel,
+			Schema: `{"type":"object","properties":{"body":{"type":"string"}},"required":["body"],"additionalProperties":false}`},
 		Diagnose: {Name: "diagnose", Outs: []Out{Ok, Invalid, Timeout, OverBudget},
-			Role: "auditor", Model: sonnet,
-			Schema: `{"type":"object","properties":{"cause":{"type":"string"},"fix":{"type":"string"},"kind":{"enum":["bug","follow-up"]},"title":{"type":"string"},"body":{"type":"string"}},"required":["cause","fix","kind","title","body"],"additionalProperties":false}`,
-			Allow:  "Read,Grep,Glob," + shRead},
+			Role: "auditor", Model: piDecisionModel,
+			Schema: `{"type":"object","properties":{"cause":{"type":"string"},"fix":{"type":"string"},"kind":{"enum":["bug","follow-up"]},"title":{"type":"string"},"body":{"type":"string"}},"required":["cause","fix","kind","title","body"],"additionalProperties":false}`},
 		Resolve: {Name: "resolve", Outs: []Out{Ok, Blocked, Invalid, Timeout, OverBudget},
-			Role: "resolver", Model: haiku, // merging two edits of one file is a small text job
+			Role: "resolver", Model: piWorkModel, // merging two edits of one file is a small text job
 			Schema: `{"type":"object","properties":{"status":{"enum":["resolved","blocked"]},"summary":{"type":"string"}},"required":["status","summary"],"additionalProperties":false}`,
-			Allow:  "Read,Grep,Glob,Edit,Write," + shRead + ",Bash(git diff:*),Bash(git status:*)",
 			Edit:   true},
 	}
 	var schema map[string]any
@@ -332,7 +313,7 @@ type Ctx struct {
 	UnitIdx         int
 	Handoff         string // notes earlier units leave for later ones
 	BlockedUnits    int
-	Cost            float64 // known native usage: Claude USD or Copilot credits
+	Cost            float64 // known pi usage in USD
 	CostUnknown     int     // sessions without complete native usage
 	RunBudget       float64 // native SM_RUN_LIMIT; 0 disables the run limit
 	Export          string  // prepare -> dispatch: whether the Ghidra export is usable, with its STAMP
@@ -443,229 +424,6 @@ func builtin(allow string) string {
 		}
 	}
 	return strings.Join(names, ",")
-}
-
-// claudeAgent runs one `claude -p` session and validates its structured result.
-// allow is the tool allow list; only those built-in tools are loaded and no MCP servers,
-// skills or hooks, to keep the cached prefix small. It returns Ok, or why there is no result:
-// Invalid (missing or off-schema output), Timeout or OverBudget.
-func claudeAgent(c *Ctx, state State, prompt string, out any, transcript *agentTranscript) (res Out) {
-	step := steps[state]
-	ctx, cancel := context.WithTimeout(runCtx, time.Duration(settings.TimeoutMinutes*float64(time.Minute)))
-	defer cancel()
-	budget := settings.SessionLimit
-	if c.RunBudget > 0 { // a session may not spend more than the run has left
-		budget = min(budget, c.RunBudget-c.Cost)
-	}
-	allow := configuredAllow(state)
-	// The prompt goes on stdin: as an argument it can exceed Windows' ~32K command-line limit.
-	args := []string{"-p", "--output-format", "stream-json", "--verbose", "--json-schema", step.Schema,
-		"--no-session-persistence", "--allowedTools", allow, "--max-budget-usd", strconv.FormatFloat(budget, 'f', 4, 64),
-		"--append-system-prompt", rolePrompt(state)}
-	if model := stepModel(step); model != "" {
-		args = append(args, "--model", model)
-	}
-	// SM_AUDIT=1: every built-in tool is listed and permissions are bypassed, so `agent-sm stats`
-	// can show what each state really uses. Outward commands stay denied (auditDeny), MCP servers
-	// and skills stay off. Normal runs load only the allow list.
-	audit := settings.Audit
-	args = append(args, "--strict-mcp-config", "--disable-slash-commands")
-	if settings.Management.Mode == "service" {
-		var denied []string
-		for _, prefix := range []string{"gh", "curl", "wget"} {
-			for _, wrapper := range []string{"", "rtk ", "rtk proxy "} {
-				denied = append(denied, "Bash("+wrapper+prefix+":*)")
-			}
-		}
-		args = append(args, "--disallowedTools", strings.Join(denied, ","))
-	}
-	if audit {
-		deny := auditDeny
-		if state != Execute {
-			deny += ",Edit,Write,NotebookEdit"
-		}
-		args = append(args, "--permission-mode", "bypassPermissions", "--disallowedTools", deny)
-	} else {
-		args = append(args, "--tools", builtin(allow))
-		if step.Edit {
-			args = append(args, "--permission-mode", "acceptEdits")
-		}
-	}
-	for _, d := range settings.AddDirs {
-		if d != "" {
-			args = append(args, "--add-dir", d)
-		}
-	}
-	if transcript != nil {
-		if err := transcript.request(args, state, cancel); err != nil {
-			logEvent(map[string]any{"event": "transcript-error", "err": err.Error()})
-			return Invalid
-		}
-	}
-	cmd := process(ctx, c.Repo, "claude", args...)
-	cmd.Env = cleanAgentEnv()
-	cmd.Stdin = strings.NewReader(prompt)
-	diagnostics := &boundedOutput{limit: 64 << 10}
-	cmd.Stderr = diagnostics
-	if transcript != nil {
-		cmd.Stderr = io.MultiWriter(transcript.stderr, diagnostics)
-	}
-	stdout, perr := cmd.StdoutPipe()
-	if perr == nil {
-		perr = cmd.Start()
-	}
-	if perr != nil {
-		logEvent(map[string]any{"event": "agent-error", "err": perr.Error()})
-		return Invalid
-	}
-
-	st := &Stats{Provider: "claude", Repo: c.Repo, Issue: c.Issue, State: state.String(), ToolCalls: map[string]int{}, BashCmds: map[string]int{}}
-	if state == Investigate && len(c.Units) > 0 {
-		st.Unit = c.Units[c.UnitIdx].ID
-	}
-	prog := &progress{c: c, state: state, unit: st.Unit, start: time.Now()}
-	var structured json.RawMessage
-	usageReported := false
-	isErr, subtype := true, ""
-	var reader io.Reader = stdout
-	if transcript != nil {
-		reader = io.TeeReader(stdout, transcript.stdout)
-	}
-	sc := bufio.NewScanner(reader)
-	sc.Buffer(make([]byte, 1<<20), 64<<20)
-	for sc.Scan() {
-		line := sc.Bytes()
-		var ev struct {
-			Type    string   `json:"type"`
-			Subtype string   `json:"subtype"`
-			Session string   `json:"session_id"`
-			Model   string   `json:"model"`
-			Tools   []string `json:"tools"`
-			MCP     []struct {
-				Name string `json:"name"`
-			} `json:"mcp_servers"`
-			Message struct {
-				Content []struct {
-					Type    string          `json:"type"`
-					Name    string          `json:"name"`
-					Text    string          `json:"text"`
-					IsError bool            `json:"is_error"`
-					Input   json.RawMessage `json:"input"`
-				} `json:"content"`
-			} `json:"message"`
-			IsError bool     `json:"is_error"`
-			Turns   int      `json:"num_turns"`
-			Dur     int      `json:"duration_ms"`
-			Cost    *float64 `json:"total_cost_usd"`
-			Denied  []struct {
-				Tool  string          `json:"tool_name"`
-				Input json.RawMessage `json:"tool_input"`
-			} `json:"permission_denials"`
-			RawUsage struct {
-				In     int `json:"input_tokens"`
-				Out    int `json:"output_tokens"`
-				Create int `json:"cache_creation_input_tokens"`
-				Read   int `json:"cache_read_input_tokens"`
-			} `json:"usage"`
-			Structured json.RawMessage `json:"structured_output"`
-		}
-		if json.Unmarshal(line, &ev) != nil {
-			continue
-		}
-		switch {
-		case ev.Type == "system" && ev.Subtype == "init":
-			st.SessionID, st.Model, st.ToolsListed = ev.Session, ev.Model, ev.Tools
-			for _, m := range ev.MCP {
-				st.MCP = append(st.MCP, m.Name)
-			}
-		case ev.Type == "assistant":
-			for _, b := range ev.Message.Content {
-				switch b.Type {
-				case "tool_use":
-					st.ToolCalls[b.Name]++
-					var in toolInput
-					json.Unmarshal(b.Input, &in)
-					if b.Name == "Bash" {
-						for _, w := range cmdWords(in.Command) {
-							st.BashCmds[w]++
-						}
-					}
-					prog.tool(b.Name, in)
-				case "text":
-					prog.add("say", b.Text)
-				}
-			}
-		case ev.Type == "user":
-			for _, b := range ev.Message.Content {
-				if b.Type == "tool_result" && b.IsError {
-					prog.add("error", "the last tool call returned an error")
-				}
-			}
-		case ev.Type == "result":
-			// A finished background task resumes the session and emits another result; the
-			// last one is the final answer. Its total_cost_usd is cumulative for the session,
-			// while num_turns, duration_ms and usage cover only that segment.
-			isErr, structured, subtype = ev.IsError, ev.Structured, ev.Subtype
-			st.Turns, st.DurationMs, st.Denials = st.Turns+ev.Turns, st.DurationMs+ev.Dur, len(ev.Denied)
-			usageReported = ev.Cost != nil && finiteNonnegative(*ev.Cost)
-			if usageReported {
-				st.CostUSD = *ev.Cost
-			}
-			st.DeniedTools = map[string]int{}
-			for _, d := range ev.Denied {
-				st.DeniedTools[d.Tool]++
-				if len(st.DeniedSample) < 5 {
-					st.DeniedSample = append(st.DeniedSample, d.Tool+" "+tail(string(d.Input), 200))
-				}
-			}
-			st.InputTokens, st.OutputTokens = st.InputTokens+ev.RawUsage.In, st.OutputTokens+ev.RawUsage.Out
-			st.CacheCreation, st.CacheRead = st.CacheCreation+ev.RawUsage.Create, st.CacheRead+ev.RawUsage.Read
-		}
-	}
-	if sc.Err() != nil {
-		cancel()
-	}
-	runErr := cmd.Wait()
-	if err := sc.Err(); err != nil {
-		logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
-		runErr = err
-	}
-	st.Killed = ctx.Err() != nil && len(structured) == 0
-	prog.flush(true)
-	c.Cost += st.CostUSD
-	st.UsageUnknown = !usageReported
-	if st.UsageUnknown {
-		c.CostUnknown++
-	}
-	defer func() {
-		st.Outcome, st.OK = res.String(), res == Ok
-		writeStats(st)
-		logEvent(map[string]any{"event": "agent", "stats": st})
-	}()
-	if runErr != nil && len(structured) == 0 {
-		logEvent(map[string]any{"event": "agent-error", "err": runErr.Error(), "stderr": tail(diagnostics.String(), 1500)})
-	} else if runErr == nil && (isErr || len(structured) == 0) && subtype != "error_max_budget_usd" {
-		// The CLI exited cleanly but gave no usable answer; say why instead of failing silently.
-		logEvent(map[string]any{"event": "invalid-result", "err": fmt.Sprintf("claude result subtype %q, is_error %v, structured output %v",
-			subtype, isErr, len(structured) > 0), "stderr": tail(diagnostics.String(), 1500)})
-	}
-	switch {
-	case subtype == "error_max_budget_usd":
-		return OverBudget
-	case ctx.Err() == context.DeadlineExceeded && len(structured) == 0:
-		return Timeout
-	case runErr != nil || isErr || len(structured) == 0:
-		return Invalid
-	}
-	st.Result = string(structured)
-	if len(st.Result) > 1500 {
-		st.Result = st.Result[:1500]
-	}
-	if err := validateResult(structured, step.Schema, out); err != nil {
-		logEvent(map[string]any{"event": "invalid-result", "err": err.Error()})
-		return Invalid
-	}
-	return Ok
 }
 
 func issueText(c *Ctx) string {
@@ -1247,10 +1005,7 @@ func main() {
 		return
 	}
 	if len(os.Args) >= 2 && os.Args[1] == "allow" {
-		if os.Getenv("SM_PROVIDER") == "copilot" {
-			fmt.Fprintln(os.Stderr, "allow suggestions use Claude syntax; use profile commands for Copilot")
-			os.Exit(2)
-		}
+		// allow prints the allow-list suggestions from stats; nothing to check here.
 	} else if configPath == "" && len(args) > 0 && args[0] == "serve" {
 		p, err := autoProfile(".")
 		if err != nil {

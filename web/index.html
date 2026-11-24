@@ -316,8 +316,6 @@
       <div class="steph"><span class="stepn">3</span><h3>Run</h3><span class="note" id="selNote">nothing selected</span></div>
       <div class="toolbar">
         <label>Publish <select id="publish"><option value="pr">open a draft PR</option><option value="">local only (staged branch)</option></select></label>
-        <label class="check"><input type="checkbox" id="audit"> audit mode</label>
-        <label title="Which agent CLI runs the steps. The model lists below follow it.">Agent <select id="agent" aria-label="Agent"></select></label>
         <label>Budget per step <span id="budgetUnit">$</span> <input type="number" id="budget" value="10" min="0.01" step="0.01"></label>
         <label title="How many queued issues run at once, each in its own worktree. Applies to every queue on this server.">In parallel <input type="number" id="parallel" value="2" min="1" max="16" step="1" style="width:4.5em"></label>
         <button class="btn primary go" id="runBtn" disabled>Run selected</button>
@@ -546,7 +544,7 @@ const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? 
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 let REPO = store.get("sm-repo", ""), SHOWN = "", LIST = null;
 const withRepo = path => REPO ? path + (path.includes("?") ? "&" : "?") + "repo=" + encodeURIComponent(REPO) : path;
-let AGENT = store.get("sm-agent", "claude"); // page default; empty means the server's own choice
+let AGENT = "pi"; // the only agent CLI
 const withAgent = path => withRepo(AGENT ? path + "?provider=" + encodeURIComponent(AGENT) : path);
 const base = p => p.split(/[\\/]/).filter(Boolean).pop() || p;
 
@@ -627,7 +625,7 @@ function renderQueue(q) {
     Object.assign($("budget"), { min: q.min_session_limit, step: credits ? "1" : "0.01" });
     if (QUEUE.provider !== undefined) $("budget").value = q.session_limit; // a real agent switch resets the budget; the page default (10) holds on load
   }
-  QUEUE = q; renderModels(q); renderAgents(q);
+  QUEUE = q; renderModels(q);
   const parts = [];
   for (const j of q.running || []) parts.push(`running #${j.issue}` + (j.err ? " (" + j.err + ")" : ""));
   if (q.queued && q.queued.length) parts.push("queued: " + q.queued.map(j => "#" + j.issue).join(", "));
@@ -671,12 +669,6 @@ function renderModels(q) {
     <button class="btn reset" type="button" data-state="${esc(st)}" aria-label="Reset ${esc(st)} to default" title="Back to default">↺</button></div>`).join("");
   markModels();
 }
-function renderAgents(q) {
-  const html = Object.entries(q.providers || {}).sort().map(([name, ok]) =>
-    `<option value="${esc(name)}"${ok ? "" : " disabled"}${name === q.provider ? " selected" : ""}>${esc(name)}${ok ? "" : " (not installed)"}</option>`).join("");
-  if ($("agent").dataset.html !== html) { $("agent").innerHTML = $("agent").dataset.html = html; } // unchanged: keep an open picker
-}
-$("agent").addEventListener("change", e => { AGENT = e.target.value; store.set("sm-agent", AGENT); tick(); });
 function saveModels() { try { localStorage.setItem(MODEL_KEY(), JSON.stringify(chosenModels())); } catch {} markModels(); }
 $("modelGrid").addEventListener("change", saveModels);
 $("modelGrid").addEventListener("click", e => {
@@ -765,7 +757,7 @@ $("useRepo").addEventListener("click", () => LIST && LIST.repo && setRepo(LIST.r
 $("runBtn").addEventListener("click", async () => {
   const issues = [...SEL].sort(bugsFirst), publish = $("publish").value;
   if (!confirm("Run " + issues.map(n => "#" + n).join(", ") + " in " + base(SHOWN) + (publish ? " and open draft PRs (this pushes branches)" : " locally") + "?")) return;
-  try { renderQueue(await post("/api/run", { issues, repo: REPO || undefined, publish, audit: $("audit").checked, budget: $("budget").value, provider: QUEUE.provider, concurrency: Math.min(16, Math.max(1, parseInt($("parallel").value, 10) || 1)), models: chosenModels() })); SEL.clear(); renderIssues(); show("pipeline"); }
+  try { renderQueue(await post("/api/run", { issues, repo: REPO || undefined, publish, budget: $("budget").value, provider: QUEUE.provider, concurrency: Math.min(16, Math.max(1, parseInt($("parallel").value, 10) || 1)), models: chosenModels() })); SEL.clear(); renderIssues(); show("pipeline"); }
   catch (err) { $("qstate").textContent = "cannot start: " + err.message; }
 });
 

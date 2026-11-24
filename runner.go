@@ -23,7 +23,6 @@ type Job struct {
 	Issue      int               `json:"issue"`
 	Repo       string            `json:"repo,omitempty"`
 	Publish    string            `json:"publish"` // "" (local only) or "pr"; merge is CLI-only
-	Audit      bool              `json:"audit"`
 	Budget     string            `json:"budget"`
 	Models     map[string]string `json:"models,omitempty"` // state -> model chosen on the page
 	Started    string            `json:"started,omitempty"`
@@ -289,9 +288,6 @@ func childEnv(j *Job, stats string) []string {
 	env = append(env, "SM_STATS="+stats)
 	if j.Publish == levelPR {
 		env = append(env, "SM_PUBLISH=pr")
-	}
-	if j.Audit {
-		env = append(env, "SM_AUDIT=1")
 	}
 	if j.Budget != "" {
 		env = append(env, "SM_BUDGET="+j.Budget)

@@ -17,8 +17,8 @@ func TestTableHasNoHoles(t *testing.T) {
 		if st.Name == "" || st.Run == nil || len(st.Outs) == 0 {
 			t.Errorf("state %d is not fully declared: %+v", i, st)
 		}
-		if agentStep := st.Role != ""; agentStep != (st.Schema != "" && st.Allow != "") {
-			t.Errorf("%v: an agent step needs Role, Schema and Allow together", s)
+		if agentStep := st.Role != ""; agentStep != (st.Schema != "") {
+			t.Errorf("%v: an agent step needs Role and Schema together", s)
 		}
 		for _, o := range st.Outs {
 			func() {
@@ -101,19 +101,6 @@ func TestDependencies(t *testing.T) {
 	}
 	if d := dependencies("## Dependencies\n**Depends on:** #12\nBlocked by #13\n1. #14\n+ #15"); !slices.Equal(d, []int{12, 13, 14, 15}) {
 		t.Errorf("explicit entries = %v, want [12 13 14 15]", d)
-	}
-}
-
-func TestScopeAndAllow(t *testing.T) {
-	files := []string{"docs/re/status.md", "crates/sim/"}
-	if !inScope("docs/re/status.md", files) || !inScope("crates/sim/src/a.rs", files) || inScope("crates/data/a.rs", files) {
-		t.Error("inScope wrong")
-	}
-	a := suggestAllow("investigate", map[string]int{"Bash": 2, "Edit": 1, "StructuredOutput": 1},
-		map[string]int{"ghidra status": 2, "git push": 1, "rtk git commit": 1, "rm": 1})
-	if !strings.Contains(a, "Bash(ghidra status:*)") || strings.Contains(a, "push") || strings.Contains(a, "commit") ||
-		strings.Contains(a, "rm") || strings.Contains(a, "Edit") {
-		t.Errorf("suggestAllow = %q", a)
 	}
 }
 
@@ -331,7 +318,7 @@ func TestFollowUpReason(t *testing.T) {
 }
 
 func TestFollowUpBodyFallsBackToRawNotes(t *testing.T) {
-	useProfile(t, defaultProfile("copilot"))
+	useProfile(t, defaultProfile("pi"))
 	c := &Ctx{Scratch: t.TempDir(), Summary: "did a", Evidence: "open b", RunBudget: 1, CostUnknown: 1} // over budget: no session runs
 	if got := followUpBody(c, "split"); !strings.Contains(got, "did a") || !strings.Contains(got, "open b") {
 		t.Fatalf("followUpBody = %q", got)
@@ -353,7 +340,7 @@ func TestEnqueueGroupsABatch(t *testing.T) {
 }
 
 func TestPartialPRNamesItsFollowUpSubIssue(t *testing.T) {
-	useProfile(t, defaultProfile("copilot"))
+	useProfile(t, defaultProfile("pi"))
 	dir := t.TempDir()
 	log := filepath.Join(dir, "gh.log")
 	writeFile(t, filepath.Join(dir, "gh"), `#!/bin/sh
@@ -378,7 +365,7 @@ esac
 }
 
 func TestSplitCommentsOnTheIssueInsteadOfFilingACopy(t *testing.T) {
-	useProfile(t, defaultProfile("copilot"))
+	useProfile(t, defaultProfile("pi"))
 	dir := t.TempDir()
 	log := filepath.Join(dir, "gh.log")
 	writeFile(t, filepath.Join(dir, "gh"), `#!/bin/sh
@@ -396,10 +383,10 @@ printf '%s|' "$@" >> "`+log+`"; echo >> "`+log+`"
 
 func TestPassReviewWithRemainingWorkMarksPartial(t *testing.T) {
 	dir, scratch := t.TempDir(), t.TempDir()
-	writeFile(t, filepath.Join(dir, "opencode"), "#!/bin/sh\nprintf '%s' \"$SM_TEST_STDOUT\"\n", 0o755)
+	writeFile(t, filepath.Join(dir, "pi"), "#!/bin/sh\nprintf '%s' \"$SM_TEST_STDOUT\"\n", 0o755)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SM_STATS", filepath.Join(dir, "stats.jsonl"))
-	p := defaultProfile("opencode")
+	p := defaultProfile("pi")
 	p.SessionLimit, p.RunLimit = 1, 5
 	useProfile(t, p)
 	oldEvents := eventsPath
@@ -414,7 +401,7 @@ func TestPassReviewWithRemainingWorkMarksPartial(t *testing.T) {
 		{`{"verdict":"PASS","reasons":["ok"],"remaining":[]}`, false},
 		{`{"verdict":"PASS","reasons":["ok"]}`, false},
 	} {
-		t.Setenv("SM_TEST_STDOUT", opencodeOutput(t, tc.result, &cost))
+		t.Setenv("SM_TEST_STDOUT", piOutput(t, tc.result, &cost))
 		c := &Ctx{Repo: dir, Scratch: scratch, RunBudget: 5, Partial: true} // the executor said "partial": the review's list decides
 		if got := review(c); got != Pass {
 			t.Fatalf("%s: review = %v", tc.result, got)
@@ -438,9 +425,9 @@ func TestDiagnosis(t *testing.T) {
 	}
 	diagnosing.Delete(dir)
 	// the audit uses the agent the run recorded last, not the server's default
-	os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte("{\"provider\":\"copilot\"}\nnot json\n{\"exit\":\"errored\",\"provider\":\"claude\"}\n"), 0o644)
-	if p := runProvider(dir); p != "claude" {
-		t.Fatalf("runProvider = %q, want claude", p)
+	os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte("{\"provider\":\"pi\"}\nnot json\n{\"exit\":\"errored\",\"provider\":\"pi\"}\n"), 0o644)
+	if p := runProvider(dir); p != "pi" {
+		t.Fatalf("runProvider = %q, want pi", p)
 	}
 	// a diagnosis on disk shows on the board, and one already filed is not filed again (no gh call)
 	os.WriteFile(filepath.Join(dir, "diagnosis.json"), []byte(`{"exit":"errored","kind":"bug","title":"t","cause":"c","fix":"f","body":"b","issue":"https://x/issues/3"}`), 0o644)
@@ -449,22 +436,5 @@ func TestDiagnosis(t *testing.T) {
 	}
 	if url, err := fileDiagnosis(dir, "/nonexistent", 1); err != nil || url != "https://x/issues/3" {
 		t.Fatalf("fileDiagnosis = %q, %v", url, err)
-	}
-}
-
-func TestProbePythonFollowsEnvironment(t *testing.T) {
-	useProfile(t, Profile{Provider: "claude", Legacy: true})
-	t.Setenv("SM_PROBE_PYTHON", "")
-	if !strings.Contains(rolePrompt(Investigate), defaultProbePython) || !strings.Contains(configuredAllow(Investigate), "Bash("+defaultProbePython+":*)") {
-		t.Fatal("default probe interpreter missing from prompt or allow list")
-	}
-	const custom = `C:\venvs\desmume\Scripts\python.exe`
-	t.Setenv("SM_PROBE_PYTHON", custom)
-	prompt, allow := rolePrompt(Investigate), configuredAllow(Investigate)
-	if strings.Contains(prompt, defaultProbePython) || !strings.Contains(prompt, custom) {
-		t.Fatalf("prompt still names the default interpreter:\n%s", prompt)
-	}
-	if strings.Contains(allow, defaultProbePython) || !strings.Contains(allow, "Bash("+custom+":*)") {
-		t.Fatalf("allow list does not follow SM_PROBE_PYTHON: %s", allow)
 	}
 }

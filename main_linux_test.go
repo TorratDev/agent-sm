@@ -1,5 +1,3 @@
-//go:build unix
-
 package main
 
 import (
@@ -15,11 +13,11 @@ import (
 
 // A stopped (or timed-out) session takes its child processes with it.
 func TestAgentKillsProcessGroup(t *testing.T) {
-	useProfile(t, defaultProfile("claude"))
+	useProfile(t, defaultProfile("pi"))
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "pid")
 	// Write then rename, so the watcher below never reads a half-written pid file.
-	os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\nsleep 300 &\necho $! > "+pidFile+".tmp && mv "+pidFile+".tmp "+pidFile+"\nwait\n"), 0o755)
+	os.WriteFile(filepath.Join(dir, "pi"), []byte("#!/bin/sh\nsleep 300 &\necho $! > "+pidFile+".tmp && mv "+pidFile+".tmp "+pidFile+"\nwait\n"), 0o755)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SM_STATS", filepath.Join(dir, "stats.jsonl"))
 	ctx, cancel := context.WithCancel(context.Background())

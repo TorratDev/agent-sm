@@ -12,11 +12,10 @@ func TestSmokeAgent(t *testing.T) {
 	if os.Getenv("SM_SMOKE") == "" {
 		t.Skip("set SM_SMOKE=1 to spend a few cents on a real agent call")
 	}
+	sandboxOff = false // the real agent runs in the real sandbox
+	t.Cleanup(func() { sandboxOff = true })
 	t.Setenv("SM_STATS", t.TempDir()+"/stats.jsonl")
-	p := defaultProfile(os.Getenv("SM_PROVIDER"))
-	if p.Provider == "" {
-		p.Provider = "copilot"
-	}
+	p := defaultProfile("pi")
 	p.Checks = []string{"true"}
 	useProfile(t, p)
 	var r struct{ Verdict string }
@@ -24,7 +23,6 @@ func TestSmokeAgent(t *testing.T) {
 	old := steps[Review]
 	defer func() { steps[Review] = old }()
 	steps[Review].Schema = `{"type":"object","properties":{"verdict":{"enum":["PASS","FAIL"]}},"required":["verdict"],"additionalProperties":false}`
-	steps[Review].Allow = "Read"
 	if err := os.WriteFile(filepath.Join(c.Repo, "sample.txt"), []byte("smoke"), 0o600); err != nil {
 		t.Fatal(err)
 	}

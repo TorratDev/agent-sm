@@ -33,7 +33,6 @@ fi
 changed=$(git diff --name-only "$base" HEAD --; git diff --name-only HEAD --; git ls-files --others --exclude-standard)
 changed=$(printf '%s\n' "$changed" | sort -u | sed '/^$/d')
 
-# A newline-separated list, not an associative array: macOS ships bash 3.2.
 test_files=""
 add_test_file() { test_files=$(printf '%s\n%s' "$test_files" "$1"); }
 for f in $changed; do

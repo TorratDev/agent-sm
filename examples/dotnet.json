@@ -1,5 +1,5 @@
 {
-  "provider": "copilot",
+  "provider": "pi",
   "checks": [
     "dotnet build .",
     "dotnet test --logger trx --results-directory \"$SM_CHECK_RESULTS/unit\""

@@ -1,0 +1,18 @@
+# The podman sandbox for agent sessions (the Windows default; see sandbox.go).
+# Smallest base that runs pi: Alpine with Node, plus git. Add the project's toolchain with
+# TOOLCHAIN, as Alpine package names, for example:
+#   podman build -t agent-sm-pi sandbox
+#   podman build -t agent-sm-pi --build-arg TOOLCHAIN=go sandbox
+#   podman build -t agent-sm-pi --build-arg TOOLCHAIN="cargo rust" sandbox
+#   podman build -t agent-sm-pi --build-arg TOOLCHAIN=dotnet9-sdk sandbox
+FROM docker.io/library/node:22-alpine
+
+ARG PI_VERSION=1.6.0
+ARG TOOLCHAIN=""
+
+RUN apk add --no-cache git $TOOLCHAIN \
+ && npm install -g --omit=dev "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+ && npm cache clean --force \
+ && rm -rf /root/.npm /tmp/*
+
+WORKDIR /work

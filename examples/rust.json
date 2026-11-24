@@ -1,5 +1,5 @@
 {
-  "provider": "copilot",
+  "provider": "pi",
   "format": "cargo fmt --all",
   "checks": [
     "cargo fmt --all -- --check",
