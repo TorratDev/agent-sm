@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -102,6 +103,12 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 	if transcript != nil {
 		if err := transcript.request(args, state, cancel); err != nil {
 			logEvent(map[string]any{"event": "transcript-error", "err": err.Error()})
+			return Invalid
+		}
+	}
+	if !sandboxOff {
+		if err := piAuth(ctx, model, settings.TimeoutMinutes); err != nil {
+			logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
 			return Invalid
 		}
 	}
@@ -277,4 +284,28 @@ func piArgs(state State, model, systemPath, messagePath string) []string {
 // modelOptions is the model list the page offers for each step.
 func modelOptions() []string {
 	return piModels
+}
+
+// piAuth checks on the host that model's credentials work, so a dead login fails with the fix
+// named instead of as an empty session. The sandbox mounts auth.json read-only, so pi there cannot
+// save a rotated OAuth refresh token; refreshing here, to outlast the session, keeps that from
+// happening and burning the refresh token.
+func piAuth(ctx context.Context, model string, minutes float64) error {
+	var r struct{ Status, Provider, AuthType string }
+	out, _ := exec.CommandContext(ctx, "pi", "auth", "check", "--model", model, "--json").Output()
+	if json.Unmarshal(out, &r) != nil || r.Status != "ready" {
+		if r.Status == "" {
+			r.Status = "unknown (" + strings.TrimSpace(string(out)) + ")"
+		}
+		return fmt.Errorf("pi credentials for %s are %s; run `pi auth login %s`", model, r.Status, r.Provider)
+	}
+	if r.AuthType != "oauth" {
+		return nil
+	}
+	// Output is discarded: it is the bearer token.
+	expiry := fmt.Sprintf("%dm", int(minutes)+5)
+	if err := exec.CommandContext(ctx, "pi", "auth", "print-bearer-token", "--model", model, "--min-expiry", expiry).Run(); err != nil {
+		return fmt.Errorf("pi could not refresh the %s login for %s: %v; run `pi auth login %s`", r.Provider, model, err, r.Provider)
+	}
+	return nil
 }

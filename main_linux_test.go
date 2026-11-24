@@ -54,3 +54,31 @@ func TestAgentKillsProcessGroup(t *testing.T) {
 		t.Errorf("CostUnknown = %d, want 1 for a killed session", c.CostUnknown)
 	}
 }
+
+func TestPiAuth(t *testing.T) {
+	bin := t.TempDir()
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	fake := func(check string, bearerExit int) {
+		script := "#!/bin/sh\ncase \"$2\" in check) echo '" + check + "';; print-bearer-token) exit " + strconv.Itoa(bearerExit) + ";; esac\n"
+		if err := os.WriteFile(filepath.Join(bin, "pi"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		check  string
+		bearer int
+		want   string
+	}{
+		{`{"status":"ready","provider":"opencode-go","authType":"api_key"}`, 1, ""},
+		{`{"status":"ready","provider":"anthropic","authType":"oauth"}`, 0, ""},
+		{`{"status":"ready","provider":"anthropic","authType":"oauth"}`, 1, "pi auth login anthropic"},
+		{`{"status":"invalid","provider":"anthropic","authType":"oauth"}`, 0, "are invalid; run `pi auth login anthropic`"},
+		{`not json`, 0, "unknown (not json)"},
+	} {
+		fake(tc.check, tc.bearer)
+		err := piAuth(context.Background(), "m", 60)
+		if (err == nil) != (tc.want == "") || err != nil && !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("check %s, bearer exit %d: got %v, want %q", tc.check, tc.bearer, err, tc.want)
+		}
+	}
+}
