@@ -36,7 +36,7 @@ func TestResultValidation(t *testing.T) {
 	for _, raw := range []string{
 		`{}`, `{"verdict":"PASS"}`, `{"verdict":"UNKNOWN","reasons":[]}`,
 		`{"verdict":"PASS","reasons":null}`, `{"verdict":"PASS","reasons":[1]}`,
-		`{"verdict":"PASS","reasons":[],"extra":true}`, `{"verdict":"PASS","verdict":"REVISE","reasons":[]}`,
+		`{"verdict":"PASS","verdict":"REVISE","reasons":[]}`,
 		`{"verdict":"PASS","reasons":[]} {}`, "```json\n{}\n```", `null`, `{"verdict":[],"reasons":[]}`,
 	} {
 		var out struct {
@@ -53,6 +53,10 @@ func TestResultValidation(t *testing.T) {
 	}
 	if err := validateResult([]byte(`{"verdict":"PASS","reasons":["verified"]}`), steps[Review].Schema, &out); err != nil {
 		t.Fatal(err)
+	}
+	// A field the schema does not name is dropped, so the strict decode into out still succeeds.
+	if err := validateResult([]byte(`{"verdict":"PASS","reasons":["ok"],"schema_note":"x"}`), steps[Review].Schema, &out); err != nil || out.Reasons[0] != "ok" {
+		t.Fatalf("extra field: %v, %+v", err, out)
 	}
 	if err := validateResult([]byte(`{"status":"plan","objective":"x","points":[],"points_derived":true,"files":[],"verification":"default","needs_investigation":true,"fits_one_pr":true,"units":[{"id":"a","title":"b"}]}`),
 		steps[Plan].Schema, new(any)); err == nil {

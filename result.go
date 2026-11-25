@@ -17,7 +17,8 @@ type resultSchema struct {
 }
 
 // validateResult covers the object/array/scalar/enum subset used by the step table.
-// Unknown schema features fail closed rather than pretending to enforce them.
+// Unknown schema features fail closed rather than pretending to enforce them. Fields the schema does
+// not name are dropped, not rejected: models add notes (a "schema_note", say) to a valid answer.
 func validateResult(raw []byte, schema string, out any) error {
 	var s resultSchema
 	if err := decodeStrict([]byte(schema), &s); err != nil {
@@ -35,7 +36,11 @@ func validateResult(raw []byte, schema string, out any) error {
 	if err := s.check(v); err != nil {
 		return err
 	}
-	return decodeStrict(raw, out)
+	checked, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return decodeStrict(checked, out)
 }
 
 // Decode tokens explicitly so duplicate result keys cannot hide an earlier value.
@@ -112,7 +117,8 @@ func (s resultSchema) check(v any) error {
 		for k, value := range m {
 			prop, ok := s.Properties[k]
 			if !ok {
-				return fmt.Errorf("unknown result field %q", k)
+				delete(m, k)
+				continue
 			}
 			if err := prop.check(value); err != nil {
 				return fmt.Errorf("%s: %w", k, err)
