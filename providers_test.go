@@ -949,12 +949,12 @@ func TestAnswerJSON(t *testing.T) {
 		"text ```json\n{}\n```":   "{}",
 		"plain text":              "plain text",
 		// glm-5.3-flash, #632 auditor: a stray brace after the object, and prose before it.
-		"```json\n{\n  \"a\": \"}\"\n  }\n}\n```":   "{\n  \"a\": \"}\"\n  }",
-		"All evidence is in:\n\n- `x`\n\n{\"a\":1}": `{"a":1}`,
+		"```json\n{\n  \"a\": \"}\"\n  }\n}\n```":               "{\n  \"a\": \"}\"\n  }",
+		"All evidence is in:\n\n- `x`\n\n{\"a\":1}":             `{"a":1}`,
 		"```json\n{\"a\":1}\n```\n\nThe run gave up because...": `{"a":1}`,
 		"```json\n{\"a\":1}\n```\n```json\n{\"b\":2}\n```":      `{"a":1}`,
-		"```json\n{\"a\":1}": `{"a":1}`,
-		"```json\n```":       "",
+		"```json\n{\"a\":1}":                                    `{"a":1}`,
+		"```json\n```":                                          "",
 	} {
 		if got := string(answerJSON([]byte(raw))); got != want {
 			t.Errorf("answerJSON(%q) = %q, want %q", raw, got, want)
