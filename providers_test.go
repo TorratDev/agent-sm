@@ -940,20 +940,24 @@ func TestWorktreeLinks(t *testing.T) {
 	}
 }
 
-func TestUnfence(t *testing.T) {
+func TestAnswerJSON(t *testing.T) {
 	for raw, want := range map[string]string{
 		"```json\n{\"a\":1}\n```": `{"a":1}`,
 		"```\n{\"a\":1}\n```":     `{"a":1}`,
 		"{\"a\":\"x```\"}":        "{\"a\":\"x```\"}",
 		"```":                     "```",
-		"text ```json\n{}\n```":   "text ```json\n{}\n```",
+		"text ```json\n{}\n```":   "{}",
+		"plain text":              "plain text",
+		// glm-5.3-flash, #632 auditor: a stray brace after the object, and prose before it.
+		"```json\n{\n  \"a\": \"}\"\n  }\n}\n```":   "{\n  \"a\": \"}\"\n  }",
+		"All evidence is in:\n\n- `x`\n\n{\"a\":1}": `{"a":1}`,
 		"```json\n{\"a\":1}\n```\n\nThe run gave up because...": `{"a":1}`,
 		"```json\n{\"a\":1}\n```\n```json\n{\"b\":2}\n```":      `{"a":1}`,
 		"```json\n{\"a\":1}": `{"a":1}`,
 		"```json\n```":       "",
 	} {
-		if got := string(unfence([]byte(raw))); got != want {
-			t.Errorf("unfence(%q) = %q, want %q", raw, got, want)
+		if got := string(answerJSON([]byte(raw))); got != want {
+			t.Errorf("answerJSON(%q) = %q, want %q", raw, got, want)
 		}
 	}
 }

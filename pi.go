@@ -245,7 +245,7 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 		logEvent(map[string]any{"event": "agent-error", "err": detail, "stderr": tail(diagnostics.String(), 1500)})
 		return Invalid
 	}
-	result = unfence(result)
+	result = answerJSON(result)
 	if err := validateResult(result, step.Schema, out); err != nil {
 		logEvent(map[string]any{"event": "invalid-result", "err": err.Error()})
 		return Invalid
@@ -254,21 +254,36 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 	return Ok
 }
 
-// unfence drops one markdown code fence around a whole answer: pi has no structured-output tool,
-// and some models (glm-5.3-flash) fence their JSON although the prompt asks for bare JSON,
-// sometimes with a remark after the closing fence. JSON never holds a raw newline inside a
-// string, so the first line starting with ``` closes the block.
-func unfence(b []byte) []byte {
+// answerJSON digs the JSON out of an answer: pi has no structured-output tool, and some models
+// (glm-5.3-flash) wrap their JSON although the prompt asks for bare JSON: prose before it, a
+// markdown fence around it, a remark or a stray closing brace after it. The answer starts at the
+// first line opening with { or ```, and ends with the first complete JSON value.
+func answerJSON(b []byte) []byte {
 	s := string(b)
-	if !strings.HasPrefix(s, "```") {
-		return b
+	if !strings.HasPrefix(s, "{") && !strings.HasPrefix(s, "```") {
+		i := strings.Index(s, "\n{")
+		if j := strings.Index(s, "\n```"); j >= 0 && (i < 0 || j < i) {
+			i = j
+		}
+		if i < 0 {
+			return b
+		}
+		s = s[i+1:]
 	}
-	_, body, ok := strings.Cut(s, "\n") // drop the opening line, language tag included
-	if !ok {
-		return b
+	if strings.HasPrefix(s, "```") {
+		_, body, ok := strings.Cut(s, "\n") // drop the opening line, language tag included
+		if !ok {
+			return b
+		}
+		s = body
 	}
-	body, _, _ = strings.Cut("\n"+body, "\n```") // a missing closing fence keeps the rest
-	return []byte(strings.TrimSpace(body))
+	d := json.NewDecoder(strings.NewReader(s))
+	if d.Decode(new(json.RawMessage)) != nil {
+		// Not JSON: cut at the closing fence so the validator reports the answer's own error.
+		body, _, _ := strings.Cut("\n"+s, "\n```")
+		return []byte(strings.TrimSpace(body))
+	}
+	return []byte(strings.TrimSpace(s[:d.InputOffset()]))
 }
 
 // piArgs builds the pi command line. The message is passed as an @file so long prompts never
