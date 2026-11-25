@@ -120,7 +120,7 @@ receive an immutable resolved snapshot, including models and limits.
 Supported fields are `provider`, `models` (state to CLI model ID), `checks`, `base_checks` (what
 `prepare` runs on the untouched base; default `checks`), `format`,
 `required_test_reports`, `session_limit`, `run_limit`, `timeout_minutes`, `commands`,
-`notes_dir`, `add_dirs`, `links` (gitignored repo files such as a ROM dump, symlinked from the main checkout into each worktree; missing ones are skipped), `base`, `jira`, `management`, `transcripts`, `concurrency`, and
+`notes_dir`, `add_dirs`, `links` (gitignored repo files such as a ROM dump, symlinked from the main checkout into each worktree, or hard-linked where Windows denies symlinks; missing ones are skipped), `base`, `jira`, `management`, `transcripts`, `concurrency`, and
 `legacy_rust_ghidra`. Unknown fields fail startup.
 The only provider is `pi`; `"provider"` must be `"pi"`.
 
@@ -162,6 +162,8 @@ sandbox (`sandbox.go`). Every step gets `read,grep,find,ls,bash`; steps that edi
 - **Windows: podman**, image `agent-sm-pi` (`SM_SANDBOX_IMAGE` to change it). Build it once with
   `podman build -t agent-sm-pi sandbox`, adding the project's toolchain with `--build-arg TOOLCHAIN=go`
   (or `"cargo rust"`, `dotnet9-sdk`). The worktree is mounted at `/work`, pi's `auth.json` read-only.
+  Also read-only: `links` at their place under `/work`, and `add_dirs` under the container's home
+  (`/root`) when they are under yours, so `~/x` stays `~/x`, otherwise under `/host` (`C:\x` is `/host/C/x`).
 
 Neither sandbox has `GH_TOKEN`, an SSH agent or the `gh` login, so only agent-sm can push, open PRs
 or edit issues. The network stays open: pi needs the model provider. The role prompt goes in

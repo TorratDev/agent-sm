@@ -131,6 +131,36 @@ func TestPodmanArgsMapPathsIntoContainer(t *testing.T) {
 	}
 }
 
+// add_dirs and linked files reach the podman sandbox read-only; ~/x keeps its place under home.
+func TestPodmanArgsMountAddDirsAndLinks(t *testing.T) {
+	_, wt := worktreeFixture(t)
+	if err := os.WriteFile(filepath.Join(wt, "p569.nds"), []byte("rom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	home, _ := os.UserHomeDir()
+	outside, want := "/data/saves", "/host/data/saves"
+	if runtime.GOOS == "windows" {
+		outside, want = `D:\data\saves`, "/host/D/data/saves"
+	}
+	old := settings
+	t.Cleanup(func() { settings = old })
+	settings.AddDirs = []string{filepath.Join(home, "venvs", "desmume"), outside}
+	settings.Links = []string{"p569.nds", "missing.bin"}
+	got := strings.Join(mustPodman(t, wt, realTempDir(t), true, nil), "\n")
+	for _, w := range []string{
+		filepath.Join(home, "venvs", "desmume") + ":/root/venvs/desmume:ro",
+		outside + ":" + want + ":ro",
+		filepath.Join(wt, "p569.nds") + ":/work/p569.nds:ro",
+	} {
+		if !strings.Contains(got, w) {
+			t.Errorf("missing %q in:\n%s", w, got)
+		}
+	}
+	if strings.Contains(got, "missing.bin") {
+		t.Errorf("mounted a link the worktree does not have:\n%s", got)
+	}
+}
+
 func mustPodman(t *testing.T, repo, files string, writable bool, args []string) []string {
 	t.Helper()
 	p, err := podmanArgs(repo, files, writable, "img", "agent-sm-test", args)
