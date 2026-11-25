@@ -54,8 +54,14 @@ func sandboxed(ctx context.Context, repo, files string, writable bool, args []st
 		if image == "" {
 			image = defaultSandboxImage
 		}
-		if err := exec.Command("podman", "image", "exists", image).Run(); err != nil {
-			return nil, fmt.Errorf("podman image %s not found; build it with: podman build -t %s sandbox", image, image)
+		// `podman image exists` exits 1 only when the image is absent; any other failure
+		// (for example the podman machine is stopped) must not be reported as a missing image.
+		if out, err := exec.Command("podman", "image", "exists", image).CombinedOutput(); err != nil {
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				return nil, fmt.Errorf("podman image %s not found; build it with: podman build -t %s sandbox", image, image)
+			}
+			return nil, fmt.Errorf("podman cannot check image %s: %s", image, strings.TrimSpace(string(out)))
 		}
 		name := "agent-sm-" + rand.Text()
 		p, err := podmanArgs(repo, files, writable, image, name, args)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -137,4 +138,17 @@ func mustPodman(t *testing.T, repo, files string, writable bool, args []string) 
 		t.Fatal(err)
 	}
 	return p
+}
+
+// A podman that cannot run (no binary, stopped machine) must not be reported as a missing image.
+func TestSandboxedPodmanFailureIsNotMissingImage(t *testing.T) {
+	oldMode, oldOff := sandboxMode, sandboxOff
+	sandboxMode, sandboxOff = "podman", false
+	t.Cleanup(func() { sandboxMode, sandboxOff = oldMode, oldOff })
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("SM_SANDBOX_IMAGE", "")
+	_, err := sandboxed(context.Background(), t.TempDir(), t.TempDir(), false, []string{"-p"})
+	if err == nil || strings.Contains(err.Error(), "not found") || !strings.Contains(err.Error(), "podman cannot check image") {
+		t.Fatalf("want a podman failure, got: %v", err)
+	}
 }
