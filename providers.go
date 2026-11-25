@@ -16,7 +16,27 @@ import (
 
 var commandPrefix = regexp.MustCompile(`^[a-zA-Z0-9_./~-]+(?: [a-zA-Z0-9_./~-]+)*$`)
 
-func agent(c *Ctx, state State, prompt string, out any) (result Out) {
+// providerRetryWaits are the pauses before each rerun of a session whose provider could not be
+// reached. A rerun starts a fresh session, as the state machine's own Invalid rerun does, but does
+// not count as a visit, so one network blip cannot end the run.
+var providerRetryWaits = []time.Duration{30 * time.Second, 2 * time.Minute}
+
+func agent(c *Ctx, state State, prompt string, out any) Out {
+	for try := 0; ; try++ {
+		res, unreachable := agentSession(c, state, prompt, out)
+		if !unreachable || try == len(providerRetryWaits) {
+			return res
+		}
+		logEvent(map[string]any{"event": "agent-retry", "state": state.String(), "wait": providerRetryWaits[try].String()})
+		select {
+		case <-time.After(providerRetryWaits[try]):
+		case <-runCtx.Done():
+			return res
+		}
+	}
+}
+
+func agentSession(c *Ctx, state State, prompt string, out any) (result Out, unreachable bool) {
 	var transcript *agentTranscript
 	if settings.Transcripts {
 		var err error

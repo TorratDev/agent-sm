@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // piOutput is the JSONL `pi --mode json` prints for one assistant answer costing cost USD.
@@ -86,5 +87,40 @@ func TestPiModelCatalogCoversEveryProvider(t *testing.T) {
 	}
 	if !slices.Contains(piModels, piWorkModel) || !slices.Contains(piModels, piDecisionModel) {
 		t.Fatal("default models are not in the catalog")
+	}
+}
+
+func TestAgentRetriesUnreachableProvider(t *testing.T) {
+	for _, tc := range []struct {
+		err   string
+		want  Out
+		calls int
+	}{
+		{"Request timed out.: Connect Timeout Error (attempted address: opencode.ai:443, timeout: 10000ms) (UND_ERR_CONNECT_TIMEOUT)", Ok, 2},
+		{"401 invalid api key", Invalid, 1},
+	} {
+		dir, scratch := t.TempDir(), t.TempDir()
+		// The first call fails with tc.err; later calls answer.
+		writeFile(t, filepath.Join(dir, "pi"), `#!/bin/sh
+echo x >> "$SM_TEST_CALLS"
+if [ "$(wc -l < "$SM_TEST_CALLS")" -eq 1 ]; then printf '%s' "$SM_TEST_FAIL"; else printf '%s' "$SM_TEST_STDOUT"; fi
+`, 0o755)
+		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		t.Setenv("SM_STATS", filepath.Join(dir, "stats.jsonl"))
+		t.Setenv("SM_TEST_CALLS", filepath.Join(dir, "calls"))
+		fail, _ := json.Marshal(map[string]any{"type": "turn_end", "message": map[string]any{"role": "assistant", "stopReason": "error", "errorMessage": tc.err}})
+		t.Setenv("SM_TEST_FAIL", string(fail)+"\n")
+		cost := 0.1
+		t.Setenv("SM_TEST_STDOUT", piOutput(t, `{"verdict":"PASS","reasons":[]}`, &cost))
+		useProfile(t, defaultProfile("pi"))
+		oldEvents, oldWaits := eventsPath, providerRetryWaits
+		eventsPath, providerRetryWaits = filepath.Join(scratch, "events.jsonl"), []time.Duration{0, 0}
+		t.Cleanup(func() { eventsPath, providerRetryWaits = oldEvents, oldWaits })
+
+		got := agent(&Ctx{Repo: dir, Scratch: scratch, Issue: 1}, Review, "review", new(any))
+		calls, _ := os.ReadFile(filepath.Join(dir, "calls"))
+		if n := strings.Count(string(calls), "\n"); got != tc.want || n != tc.calls {
+			t.Fatalf("%q: agent = %v after %d calls, want %v after %d", tc.err, got, n, tc.want, tc.calls)
+		}
 	}
 }

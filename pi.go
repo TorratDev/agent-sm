@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -63,14 +64,15 @@ const (
 
 // piAgent runs one `pi -p` session inside the sandbox (sandbox.go) and validates its structured
 // result. It returns Ok, or why there is no result: Invalid (missing or off-schema output), Timeout
-// or OverBudget.
-func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTranscript) (res Out) {
+// or OverBudget. unreachable reports an Invalid session that died because the provider could not
+// be reached, so a retry may succeed.
+func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTranscript) (res Out, unreachable bool) {
 	step := steps[state]
 	limit := settings.SessionLimit
 	if c.RunBudget > 0 {
 		limit = min(limit, c.RunBudget-c.Cost)
 		if c.CostUnknown > 0 {
-			return OverBudget
+			return OverBudget, false
 		}
 	}
 	ctx, cancel := context.WithTimeout(runCtx, time.Duration(settings.TimeoutMinutes*float64(time.Minute)))
@@ -83,7 +85,7 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 		dir, err = os.MkdirTemp(c.Scratch, "pi-")
 		if err != nil {
 			logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
-			return Invalid
+			return Invalid, false
 		}
 		defer os.RemoveAll(dir)
 	}
@@ -92,30 +94,30 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 	message := prompt + "\n\nReturn exactly one JSON object, without markdown or other text. Required schema:\n" + step.Schema
 	if err := os.WriteFile(systemPath, []byte(rolePrompt(state)), 0o600); err != nil {
 		logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
-		return Invalid
+		return Invalid, false
 	}
 	if err := os.WriteFile(messagePath, []byte(message), 0o600); err != nil {
 		logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
-		return Invalid
+		return Invalid, false
 	}
 	model := stepModel(step)
 	args := piArgs(state, model, systemPath, messagePath)
 	if transcript != nil {
 		if err := transcript.request(args, state, cancel); err != nil {
 			logEvent(map[string]any{"event": "transcript-error", "err": err.Error()})
-			return Invalid
+			return Invalid, false
 		}
 	}
 	if !sandboxOff {
 		if err := piAuth(ctx, model, settings.TimeoutMinutes); err != nil {
 			logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
-			return Invalid
+			return Invalid, false
 		}
 	}
 	cmd, err := sandboxed(ctx, c.Repo, dir, step.Edit, args)
 	if err != nil {
 		logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
-		return Invalid
+		return Invalid, false
 	}
 	diagnostics := &boundedOutput{limit: 64 << 10}
 	cmd.Stderr = diagnostics
@@ -128,7 +130,7 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 	}
 	if perr != nil {
 		logEvent(map[string]any{"event": "agent-error", "err": perr.Error()})
-		return Invalid
+		return Invalid, false
 	}
 
 	st := &Stats{Provider: "pi", Repo: c.Repo, Issue: c.Issue, State: state.String(), Model: model, ToolCalls: map[string]int{}, BashCmds: map[string]int{}}
@@ -230,10 +232,10 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 		logEvent(map[string]any{"event": "agent", "stats": st})
 	}()
 	if st.CostUSD >= limit {
-		return OverBudget
+		return OverBudget, false
 	}
 	if ctx.Err() == context.DeadlineExceeded && len(result) == 0 {
-		return Timeout
+		return Timeout, false
 	}
 	if runErr != nil || agentErr != nil || len(result) == 0 {
 		detail := ""
@@ -243,16 +245,20 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 			detail = runErr.Error()
 		}
 		logEvent(map[string]any{"event": "agent-error", "err": detail, "stderr": tail(diagnostics.String(), 1500)})
-		return Invalid
+		return Invalid, agentErr != nil && providerUnreachable.MatchString(agentErr.Error())
 	}
 	result = answerJSON(result)
 	if err := validateResult(result, step.Schema, out); err != nil {
 		logEvent(map[string]any{"event": "invalid-result", "err": err.Error()})
-		return Invalid
+		return Invalid, false
 	}
 	st.Result = tail(string(result), 1500)
-	return Ok
+	return Ok, false
 }
+
+// providerUnreachable matches pi's errors for a provider connection that failed before any answer
+// came back (undici and Node network codes): a network blip, not a problem with the session.
+var providerUnreachable = regexp.MustCompile(`UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET|Connect Timeout Error|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed`)
 
 // answerJSON digs the JSON out of an answer: pi has no structured-output tool, and some models
 // (glm-5.3-flash) wrap their JSON although the prompt asks for bare JSON: prose before it, a
