@@ -321,6 +321,10 @@ func (r *Runner) runOne(j *Job) {
 	if j.Repo == "" {
 		j.Repo = r.repo
 	}
+	if err := sandboxPreflight(); err != nil { // fail the job here, not at its first agent step
+		r.set(func() { j.Err = err.Error() })
+		return
+	}
 	p := settings
 	if j.Profile != nil {
 		p = *j.Profile

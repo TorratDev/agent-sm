@@ -687,6 +687,10 @@ func serve(issue, addr, repo string) error {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if err := sandboxPreflight(); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
 		diag, err := diagnoseRun(d, run.repo, exit, profile)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)

@@ -50,19 +50,10 @@ func sandboxed(ctx context.Context, repo, files string, writable bool, args []st
 		cmd.Env = sandboxEnv()
 		return cmd, nil
 	case "podman":
-		image := os.Getenv("SM_SANDBOX_IMAGE")
-		if image == "" {
-			image = defaultSandboxImage
+		if err := sandboxPreflight(); err != nil {
+			return nil, err
 		}
-		// `podman image exists` exits 1 only when the image is absent; any other failure
-		// (for example the podman machine is stopped) must not be reported as a missing image.
-		if out, err := exec.Command("podman", "image", "exists", image).CombinedOutput(); err != nil {
-			var exit *exec.ExitError
-			if errors.As(err, &exit) && exit.ExitCode() == 1 {
-				return nil, fmt.Errorf("podman image %s not found; build it with: podman build -t %s sandbox", image, image)
-			}
-			return nil, fmt.Errorf("podman cannot check image %s: %s", image, strings.TrimSpace(string(out)))
-		}
+		image := sandboxImage()
 		name := "agent-sm-" + rand.Text()
 		p, err := podmanArgs(repo, files, writable, image, name, args)
 		if err != nil {
@@ -79,6 +70,32 @@ func sandboxed(ctx context.Context, repo, files string, writable bool, args []st
 		return cmd, nil
 	}
 	return nil, fmt.Errorf("SM_SANDBOX must be bwrap or podman, not %q", sandboxMode)
+}
+
+func sandboxImage() string {
+	if v := os.Getenv("SM_SANDBOX_IMAGE"); v != "" {
+		return v
+	}
+	return defaultSandboxImage
+}
+
+// sandboxPreflight fails before any step runs when the podman sandbox cannot start: the podman
+// machine is down, or the image is not built. Runs without podman pass.
+func sandboxPreflight() error {
+	if sandboxOff || sandboxMode != "podman" {
+		return nil
+	}
+	image := sandboxImage()
+	// `podman image exists` exits 1 only when the image is absent; any other failure
+	// (for example the podman machine is stopped) must not be reported as a missing image.
+	if out, err := exec.Command("podman", "image", "exists", image).CombinedOutput(); err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 {
+			return fmt.Errorf("podman image %s not found; build it with: podman build -t %s sandbox", image, image)
+		}
+		return fmt.Errorf("podman cannot check image %s (is the podman machine started?): %s", image, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // bwrapOverlay reports whether the installed bwrap can mount overlays (0.11+).

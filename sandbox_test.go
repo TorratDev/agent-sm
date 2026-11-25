@@ -152,3 +152,18 @@ func TestSandboxedPodmanFailureIsNotMissingImage(t *testing.T) {
 		t.Fatalf("want a podman failure, got: %v", err)
 	}
 }
+
+// The preflight only gates podman: runs with the sandbox off or in bwrap never ask podman.
+func TestSandboxPreflightSkipsWithoutPodman(t *testing.T) {
+	oldMode, oldOff := sandboxMode, sandboxOff
+	t.Cleanup(func() { sandboxMode, sandboxOff = oldMode, oldOff })
+	t.Setenv("PATH", t.TempDir())
+	sandboxMode, sandboxOff = "podman", true
+	if err := sandboxPreflight(); err != nil {
+		t.Errorf("sandbox off: %v", err)
+	}
+	sandboxMode, sandboxOff = "bwrap", false
+	if err := sandboxPreflight(); err != nil {
+		t.Errorf("bwrap: %v", err)
+	}
+}
