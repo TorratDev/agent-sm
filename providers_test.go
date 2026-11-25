@@ -947,6 +947,10 @@ func TestUnfence(t *testing.T) {
 		"{\"a\":\"x```\"}":        "{\"a\":\"x```\"}",
 		"```":                     "```",
 		"text ```json\n{}\n```":   "text ```json\n{}\n```",
+		"```json\n{\"a\":1}\n```\n\nThe run gave up because...": `{"a":1}`,
+		"```json\n{\"a\":1}\n```\n```json\n{\"b\":2}\n```":      `{"a":1}`,
+		"```json\n{\"a\":1}":                                     `{"a":1}`,
+		"```json\n```":                                           "",
 	} {
 		if got := string(unfence([]byte(raw))); got != want {
 			t.Errorf("unfence(%q) = %q, want %q", raw, got, want)

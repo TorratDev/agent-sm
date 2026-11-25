@@ -255,17 +255,20 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 }
 
 // unfence drops one markdown code fence around a whole answer: pi has no structured-output tool,
-// and some models (glm-5.3-flash) fence their JSON although the prompt asks for bare JSON.
+// and some models (glm-5.3-flash) fence their JSON although the prompt asks for bare JSON,
+// sometimes with a remark after the closing fence. JSON never holds a raw newline inside a
+// string, so the first line starting with ``` closes the block.
 func unfence(b []byte) []byte {
 	s := string(b)
-	if !strings.HasPrefix(s, "```") || !strings.HasSuffix(s, "```") || len(s) < 6 {
+	if !strings.HasPrefix(s, "```") {
 		return b
 	}
-	s = strings.TrimSuffix(s, "```")
-	if _, body, ok := strings.Cut(s, "\n"); ok { // drop the opening line, language tag included
-		return []byte(strings.TrimSpace(body))
+	_, body, ok := strings.Cut(s, "\n") // drop the opening line, language tag included
+	if !ok {
+		return b
 	}
-	return b
+	body, _, _ = strings.Cut("\n"+body, "\n```") // a missing closing fence keeps the rest
+	return []byte(strings.TrimSpace(body))
 }
 
 // piArgs builds the pi command line. The message is passed as an @file so long prompts never
