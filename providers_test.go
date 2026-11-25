@@ -959,9 +959,38 @@ func TestAnswerJSON(t *testing.T) {
 		"```json\n{\"a\":1}\n```\n```json\n{\"b\":2}\n```":      `{"a":1}`,
 		"```json\n{\"a\":1}":                                    `{"a":1}`,
 		"```json\n```":                                          "",
+		// Raw newlines and tabs inside a string value (investigate run #612) become escapes.
+		"{\"evidence\":\"line one\nline two\",\"status\":\"evidence\"}": "{\"evidence\":\"line one\\u000aline two\",\"status\":\"evidence\"}",
 	} {
 		if got := string(answerJSON([]byte(raw))); got != want {
 			t.Errorf("answerJSON(%q) = %q, want %q", raw, got, want)
 		}
+	}
+}
+
+// Investigate run #612: a missing optional handoff is valid, and a raw newline in evidence is repaired.
+func TestInvestigateResultRepairs(t *testing.T) {
+	var out struct {
+		Status   string `json:"status"`
+		Evidence string `json:"evidence"`
+		Handoff  string `json:"handoff"`
+	}
+	raw := answerJSON([]byte("{\"status\":\"evidence\",\"evidence\":\"a\nb\"}"))
+	if err := validateResult(raw, steps[Investigate].Schema, &out); err != nil {
+		t.Fatalf("validateResult: %v", err)
+	}
+	if out.Evidence != "a\nb" || out.Handoff != "" {
+		t.Errorf("got evidence %q handoff %q", out.Evidence, out.Handoff)
+	}
+}
+
+// A rejected answer's reason reaches the retry's prompt; a clean state adds nothing.
+func TestWithRejection(t *testing.T) {
+	if got := withRejection("task", ""); got != "task" {
+		t.Errorf("no rejection changed prompt: %q", got)
+	}
+	got := withRejection("task", `missing result field "evidence"`)
+	if !strings.Contains(got, `rejected: missing result field "evidence". Return`) {
+		t.Errorf("rejection not carried: %q", got)
 	}
 }

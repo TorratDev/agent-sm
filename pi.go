@@ -250,8 +250,10 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 	result = answerJSON(result)
 	if err := validateResult(result, step.Schema, out); err != nil {
 		logEvent(map[string]any{"event": "invalid-result", "err": err.Error()})
+		c.rejected = err.Error()
 		return Invalid, false
 	}
+	c.rejected = ""
 	st.Result = tail(string(result), 1500)
 	return Ok, false
 }
@@ -283,6 +285,7 @@ func answerJSON(b []byte) []byte {
 		}
 		s = body
 	}
+	s = escapeControlChars(s)
 	d := json.NewDecoder(strings.NewReader(s))
 	if d.Decode(new(json.RawMessage)) != nil {
 		// Not JSON: cut at the closing fence so the validator reports the answer's own error.
@@ -290,6 +293,29 @@ func answerJSON(b []byte) []byte {
 		return []byte(strings.TrimSpace(body))
 	}
 	return []byte(strings.TrimSpace(s[:d.InputOffset()]))
+}
+
+// escapeControlChars escapes raw control characters inside JSON strings. Models often put a raw
+// newline in a string value, which encoding/json rejects. Valid JSON has none, so it is a no-op there.
+func escapeControlChars(s string) string {
+	var b strings.Builder
+	inStr, esc := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case esc:
+			esc = false
+		case inStr && c == '\\':
+			esc = true
+		case c == '"':
+			inStr = !inStr
+		case inStr && c < 0x20:
+			fmt.Fprintf(&b, `\u%04x`, c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // piArgs builds the pi command line. The message is passed as an @file so long prompts never

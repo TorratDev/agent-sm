@@ -1,7 +1,8 @@
 # The podman sandbox plus py-desmume and a ROM dump, for repos whose checks run DeSmuME (rust-mm).
 # Debian, not Alpine: py-desmume ships only glibc wheels. The ROM comes from its own build context,
 # so it never enters this repo:
-#   podman build -t agent-sm-pi -f sandbox/desmume.Containerfile --build-context rom=C:\path\to\rom-dir sandbox
+#   podman build -t agent-sm-pi -f sandbox/desmume.Containerfile --build-context rom=C:\path\to\rom-dir --build-context saves=C:\path\to\rescue-re\saves sandbox
+# The maintainer saves come from their own context too, so they never enter this repo either.
 # Inside: ~/venvs/desmume/bin/python (imports as `desmume`) and the dump at /rom/pmdb.nds.
 FROM docker.io/library/node:22-bookworm-slim
 
@@ -19,6 +20,7 @@ RUN apt-get update \
  && rm -rf /root/.npm /tmp/*
 
 COPY --from=rom ${ROM} /rom/pmdb.nds
+COPY --from=saves . /root/rescue-re/saves/
 ENV SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy PMDB_ROM=/rom/pmdb.nds
 
 WORKDIR /work

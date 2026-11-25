@@ -22,6 +22,7 @@ var commandPrefix = regexp.MustCompile(`^[a-zA-Z0-9_./~-]+(?: [a-zA-Z0-9_./~-]+)
 var providerRetryWaits = []time.Duration{30 * time.Second, 2 * time.Minute}
 
 func agent(c *Ctx, state State, prompt string, out any) Out {
+	prompt = withRejection(prompt, c.rejected) // the retry after an invalid answer is told what was wrong
 	for try := 0; ; try++ {
 		res, unreachable := agentSession(c, state, prompt, out)
 		if !unreachable || try == len(providerRetryWaits) {
@@ -34,6 +35,14 @@ func agent(c *Ctx, state State, prompt string, out any) Out {
 			return res
 		}
 	}
+}
+
+// withRejection appends the reason the previous answer was rejected, if there was one.
+func withRejection(prompt, rejected string) string {
+	if rejected == "" {
+		return prompt
+	}
+	return prompt + "\n\nYour previous answer was rejected: " + rejected + ". Return the corrected JSON object."
 }
 
 func agentSession(c *Ctx, state State, prompt string, out any) (result Out, unreachable bool) {

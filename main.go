@@ -149,8 +149,8 @@ func init() { // not a composite literal at package level: the step functions re
 			Role: "planner", Model: piDecisionModel,
 			Schema: `{"type":"object","properties":{"status":{"enum":["plan","blocked"]},"objective":{"type":"string"},"points":{"type":"array","items":{"type":"string"}},"points_derived":{"type":"boolean"},"files":{"type":"array","items":{"type":"string"}},"verification":{"type":"string"},"needs_investigation":{"type":"boolean"},"fits_one_pr":{"type":"boolean"},"units":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"points":{"type":"array","items":{"type":"string"}}},"required":["id","title","points"],"additionalProperties":false}}},"required":["status","objective","points","points_derived","files","verification","needs_investigation","fits_one_pr","units"],"additionalProperties":false}`},
 		Investigate: {Name: "investigate", Run: investigate, Outs: []Out{Ok, More, Blocked, Invalid, Timeout, OverBudget},
-			Role: "investigator", Model: piWorkModel,
-			Schema: `{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"}},"required":["status","evidence","handoff"],"additionalProperties":false}`},
+			Role: "investigator", Model: "anthropic/claude-sonnet-5-5", // deepseek-v4.1-flash gave invalid JSON (run #612)
+			Schema: `{"type":"object","properties":{"status":{"enum":["evidence","blocked"]},"evidence":{"type":"string"},"handoff":{"type":"string"}},"required":["status","evidence"],"additionalProperties":false}`},
 		Execute: {Name: "execute", Run: execute, Outs: []Out{Ok, Blocked, Fail, Invalid, Timeout, OverBudget},
 			Role: "executor", Model: piWorkModel,
 			Schema: `{"type":"object","properties":{"status":{"enum":["done","partial","blocked"]},"summary":{"type":"string"}},"required":["status","summary"],"additionalProperties":false}`,
@@ -300,6 +300,7 @@ type Ctx struct {
 	Ghidra          string // ghidra project copy, or "none"
 	Level           string // SM_PUBLISH: "", "pr" or "merge"
 	Verdict         string // reviewer reasons
+	rejected        string // why the last answer failed validation; the retry is told (not saved to ctx.json)
 	Rounds          int    // execute runs so far
 	Objective       string // plan -> everyone
 	Points          []string
