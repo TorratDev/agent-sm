@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -246,12 +247,9 @@ func (r *Runner) worktreeAt(n int, base string, links []string) (string, string,
 }
 
 // linkFiles symlinks gitignored files (profile links plus SM_LINKS) from the main checkout into dir;
-// a file the checkout does not have is skipped.
+// a file the checkout does not have is skipped. Without the symlink privilege (Windows) it hard-links.
 func linkFiles(repo, dir string, links []string) error {
-	for _, f := range append(slices.Clone(links), strings.Split(os.Getenv("SM_LINKS"), ",")...) {
-		if f = strings.TrimSpace(f); f == "" {
-			continue
-		}
+	for _, f := range linkNames(links) {
 		src, dst := filepath.Join(repo, f), filepath.Join(dir, f)
 		if _, err := os.Stat(src); err != nil {
 			continue
@@ -263,10 +261,23 @@ func linkFiles(repo, dir string, links []string) error {
 			return fmt.Errorf("link %s: %w", f, err)
 		}
 		if err := os.Symlink(src, dst); err != nil {
-			return fmt.Errorf("link %s: %w", f, err)
+			if err2 := os.Link(src, dst); err2 != nil {
+				return fmt.Errorf("link %s: %w", f, errors.Join(err, err2))
+			}
 		}
 	}
 	return nil
+}
+
+// linkNames is the profile's links plus SM_LINKS.
+func linkNames(links []string) []string {
+	var out []string
+	for _, f := range append(slices.Clone(links), strings.Split(os.Getenv("SM_LINKS"), ",")...) {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func (j *Job) scratch() string {

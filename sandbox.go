@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -222,6 +223,25 @@ func podmanArgs(repo, files string, writable bool, image, name string, args []st
 			p = append(p, "-v", common+":/git:ro", "-e", "GIT_DIR=/git/"+filepath.ToSlash(rel))
 		}
 		p = append(p, "-e", "GIT_WORK_TREE=/work")
+	}
+	// add_dirs read-only: under home at the same place in the container's home, so ~/x stays ~/x;
+	// anything else under /host (C:\x is /host/C/x).
+	for _, d := range settings.AddDirs {
+		v := filepath.VolumeName(d)
+		dst := path.Join("/host", filepath.ToSlash(strings.TrimSuffix(v, ":")), filepath.ToSlash(d[len(v):]))
+		if rel, err := filepath.Rel(home, d); err == nil && filepath.IsLocal(rel) {
+			dst = "/root/" + filepath.ToSlash(rel)
+		}
+		p = append(p, "-v", d+":"+dst+":ro")
+	}
+	// Linked files: the worktree's symlinks point at host paths the container cannot follow, and a
+	// hard link would let a writable step change the main checkout's copy, so mount each read-only.
+	for _, f := range linkNames(settings.Links) {
+		if src := filepath.Join(repo, f); filepath.IsLocal(f) {
+			if st, err := os.Stat(src); err == nil && !st.IsDir() {
+				p = append(p, "-v", src+":/work/"+filepath.ToSlash(filepath.Clean(f))+":ro")
+			}
+		}
 	}
 	p = append(p, image, "pi")
 	for _, a := range args {
