@@ -531,9 +531,14 @@ func prepare(c *Ctx) Out {
 				why = "base check could not run"
 			}
 			// The event keeps only the tail; the full output names the failing test, so keep it in the scratch dir.
+			ev := map[string]any{"event": "prepare", "err": why, "out": tail(failed, 2000)}
 			full := filepath.Join(c.Scratch, "base-check.log")
-			os.WriteFile(full, []byte(failed), 0o644)
-			logEvent(map[string]any{"event": "prepare", "err": why, "out": tail(failed, 2000), "full_out": full})
+			if err := os.WriteFile(full, []byte(failed), 0o644); err != nil {
+				ev["full_out_err"] = err.Error() // a path that was not written would mislead the diagnosis
+			} else {
+				ev["full_out"] = full
+			}
+			logEvent(ev)
 			return Fail
 		} else if passed != "" {
 			os.MkdirAll(filepath.Dir(passed), 0o755)

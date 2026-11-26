@@ -664,8 +664,8 @@ esac
 		t.Fatalf("a broken base must stop the run and file nothing: %v\n%s", o, got)
 	}
 	// The event keeps only a tail of the output; the full check output must survive for diagnosis.
-	if b, err := os.ReadFile(filepath.Join(scratch, "base-check.log")); err != nil || len(b) == 0 {
-		t.Fatalf("the full base check output was not kept in the scratch dir: %v", err)
+	if b, err := os.ReadFile(filepath.Join(scratch, "base-check.log")); err != nil || !strings.Contains(string(b), "E0034") {
+		t.Fatalf("the full base check output was not kept in the scratch dir: %v\n%s", err, b)
 	}
 	// filing that run's diagnosis is the user's call; the bug it files may skip the base check
 	t.Setenv("OPENCODE_API_KEY", "")
