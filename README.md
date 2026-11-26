@@ -1,3 +1,4 @@
+<!-- Throwaway run-log check: see issue #81. -->
 # agent-sm
 
 A state machine that takes one GitHub issue to a reviewed branch. The program owns the loop:
