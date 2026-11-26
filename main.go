@@ -294,6 +294,7 @@ type Ctx struct {
 	Feedback        string // check/review failure -> next execute
 	LastRevise      string // review REVISE -> next review, which confirms each item was done
 	CheckOut        string // check -> review: what the passing checks printed (WARN lines)
+	CheckFail       string `json:"-"` // the failing check's whole output; Feedback keeps only its tail
 	Diff            string // check -> review
 	Summary         string // execute -> review
 	Scratch         string // outside the repo
@@ -524,8 +525,11 @@ func prepare(c *Ctx) Out {
 		if _, err := os.Stat(passed); passed != "" && err == nil {
 			logEvent(map[string]any{"event": "prepare", "base_check": "skipped, this tree already passed"})
 		} else if !checkList(c, baseChecks(), baseReports()) {
-			failed := c.Feedback
-			c.Feedback, c.CheckOut = "", ""
+			failed, whole := c.Feedback, c.CheckFail
+			c.Feedback, c.CheckOut, c.CheckFail = "", "", ""
+			if whole == "" { // no command ran (no checks, report missing): Feedback is all there is
+				whole = failed
+			}
 			why := "base " + c.Base + baseFails
 			if strings.HasPrefix(failed, checkNotRun) { // the base was never judged
 				why = "base check could not run"
@@ -533,7 +537,7 @@ func prepare(c *Ctx) Out {
 			// The event keeps only the tail; the full output names the failing test, so keep it in the scratch dir.
 			ev := map[string]any{"event": "prepare", "err": why, "out": tail(failed, 2000)}
 			full := filepath.Join(c.Scratch, "base-check.log")
-			if err := os.WriteFile(full, []byte(failed), 0o644); err != nil {
+			if err := os.WriteFile(full, []byte(whole), 0o644); err != nil {
 				ev["full_out_err"] = err.Error() // a path that was not written would mislead the diagnosis
 			} else {
 				ev["full_out"] = full
@@ -750,10 +754,11 @@ func checkList(c *Ctx, checks, reports []string) bool {
 		c.Feedback = "cannot create check output directory: " + err.Error()
 		return false
 	}
-	c.CheckOut = ""
+	c.CheckOut, c.CheckFail = "", ""
 	for _, cmd := range checks {
 		out, err := checkCommand(c.Repo, cmd, "SM_CHECK_RESULTS="+resultDir, "SM_SCRATCH="+c.Scratch)
 		if err != nil {
+			c.CheckFail = "check failed: " + cmd + "\n" + out
 			c.Feedback = "check failed: " + cmd + "\n" + tail(out, 4000)
 			// No exit status means the command never ran to the end (start error, run cancelled): not a verdict on the code.
 			if _, exited := err.(*exec.ExitError); !exited || runCtx.Err() != nil {

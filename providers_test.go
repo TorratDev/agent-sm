@@ -640,7 +640,7 @@ esac
 	t.Setenv("SM_SCRATCH_ROOT", filepath.Join(dir, "scratch"))
 	p := defaultProfile("pi")
 	p.Base = "main"
-	p.Checks = []string{"echo E0034 duplicate; false"}
+	p.Checks = []string{"printf 'E%s duplicate\\n' 0034; head -c 9000 /dev/zero | tr '\\0' x; false"} // marker first, then more than the 4000-byte tail
 	useProfile(t, p)
 	var scratch string
 	run := func(body, existing string) (Out, string) {
@@ -663,7 +663,7 @@ esac
 	if o != Fail || strings.Contains(got, "issue create") || strings.Contains(got, "issue comment") {
 		t.Fatalf("a broken base must stop the run and file nothing: %v\n%s", o, got)
 	}
-	// The event keeps only a tail of the output; the full check output must survive for diagnosis.
+	// Feedback and the event keep only a tail; the whole output, with the marker printed first, must survive.
 	if b, err := os.ReadFile(filepath.Join(scratch, "base-check.log")); err != nil || !strings.Contains(string(b), "E0034") {
 		t.Fatalf("the full base check output was not kept in the scratch dir: %v\n%s", err, b)
 	}
