@@ -1,6 +1,6 @@
 {
   "provider": "pi",
-  "checks": ["test -z \"$(gofmt -l .)\"", "go vet ./...", "go test ./..."],
+  "checks": ["test -z \"$(gofmt -l .)\"", "go vet ./...", "go test -v ./..."],
   "commands": {
     "execute": ["go test", "go vet", "gofmt"]
   }
