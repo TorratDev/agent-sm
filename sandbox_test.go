@@ -197,3 +197,16 @@ func TestSandboxPreflightSkipsWithoutPodman(t *testing.T) {
 		t.Errorf("bwrap: %v", err)
 	}
 }
+
+// The diagnose step passes the whole scratch directory as its prompt files: podman must mount it
+// at /sm, where the auditor's prompt says it is, and find the prompt file in its transcripts.
+func TestPodmanMountsScratchForAuditor(t *testing.T) {
+	scratch := t.TempDir()
+	prompt := filepath.Join(scratch, "transcripts", "pi-diagnose-1", "prompt.md")
+	got := strings.Join(mustPodman(t, t.TempDir(), scratch, false, []string{"@" + prompt}), " ")
+	for _, w := range []string{scratch + ":/sm:ro", "@/sm/transcripts/pi-diagnose-1/prompt.md"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("missing %q in:\n%s", w, got)
+		}
+	}
+}

@@ -366,8 +366,13 @@ func auditRun(dir, repo, exit string) (*Diagnosis, error) {
 	c.Scratch = dir
 	c.RunBudget, c.Cost, c.CostUnknown = 0, 0, 0 // the run's spent budget must not stop its audit; SessionLimit still applies
 	events, _ := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+	seenDir, seenRepo := dir, c.Repo // the paths as the auditor's sandbox shows them
+	if sandboxMode == "podman" && !sandboxOff {
+		// podman mounts the scratch directory (the diagnose step's prompt files) at /sm and the repo at /work
+		seenDir, seenRepo = "/sm (host path "+dir+")", "/work (host path "+c.Repo+")"
+	}
 	prompt := fmt.Sprintf("Issue #%d: %s\nExit: %s\nScratch directory: %s (run.log, events.jsonl, ctx.json, transcripts/)\nRepository: %s\n\nLast feedback:\n%s\n\nLast verdict:\n%s\n\nEvent log (tail):\n%s",
-		c.Issue, c.Title, exit, dir, c.Repo, tail(c.Feedback, 4000), tail(c.Verdict, 2000), tail(string(events), 20000))
+		c.Issue, c.Title, exit, seenDir, seenRepo, tail(c.Feedback, 4000), tail(c.Verdict, 2000), tail(string(events), 20000))
 	var d Diagnosis
 	if o := agent(c, Diagnose, prompt, &d); o != Ok {
 		return nil, fmt.Errorf("the auditor session ended %s", o)

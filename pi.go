@@ -114,7 +114,11 @@ func piAgent(c *Ctx, state State, prompt string, out any, transcript *agentTrans
 			return Invalid, false
 		}
 	}
-	cmd, err := sandboxed(ctx, c.Repo, dir, step.Edit, args)
+	files := dir
+	if state == Diagnose {
+		files = c.Scratch // the auditor reads the run's run.log, events.jsonl, ctx.json and transcripts there
+	}
+	cmd, err := sandboxed(ctx, c.Repo, files, step.Edit, args)
 	if err != nil {
 		logEvent(map[string]any{"event": "agent-error", "err": err.Error()})
 		return Invalid, false
