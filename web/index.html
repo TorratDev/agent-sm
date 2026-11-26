@@ -128,6 +128,7 @@
   .f-chip.back svg { flex: none; margin-top: -1px; }
   .f-chip.ok { background: var(--ok-soft); color: var(--ok); font-family: var(--mono); }
   .f-chip.bad { background: var(--bad-soft); color: var(--bad); font-family: var(--mono); }
+  .f-chip.warn { background: var(--warn-soft); color: var(--warn); font-family: var(--mono); }
   .f-chip.idle { font-family: var(--mono); }
   .f-chip.cur { box-shadow: 0 0 0 2px var(--live); }
   .f-node { position: relative; z-index: 1; width: 24px; height: 24px; border-radius: 50%; background: var(--line); border: 5px solid var(--card); box-shadow: 0 0 0 2px var(--line); }
@@ -396,7 +397,8 @@ function derive(r) {
     : r.exit && r.exit !== "ready" ? r.feedback || r.verdict : !r.exit && backs.length ? r.feedback : "";
   const end = r.ended ? Date.parse(r.ended) : r.exit ? NaN : Date.now();
   const meta = [r.started && !isNaN(end) ? dur(end - Date.parse(r.started)) : "", r.cost_usd ? "$" + fmt(r.cost_usd) : ""].filter(Boolean).join(" · ");
-  return { ...r, live, far, stations, backs, status, tone, reason, meta };
+  const splitAt = r.exit === "split" ? (r.steps.findLast(v => v.out === "split") || lastStep)?.state : null;
+  return { ...r, live, far, stations, backs, status, tone, reason, meta, splitAt };
 }
 
 function diagram(c) {
@@ -471,7 +473,7 @@ function flow(all) {
     const failed = all.filter(c => c.stations[i].st === "fail");
     const sent = {};
     all.forEach(c => c.backs.filter(b => b.fi === i).forEach(b => sent[b.to] = (sent[b.to] || 0) + b.count));
-    const chips = (i === 0 ? tags(queued, "idle", "queued") : "") + tags(on, "on", "here now") + tags(failed, "bad", "ended here")
+    const chips = (i === 0 ? tags(queued, "idle", "queued") : "") + tags(on, "on", "here now") + tags(failed, "bad", "ended here") + tags(all.filter(c => c.splitAt === name), "warn", "more work: split into follow-ups")
       + (i === n - 1 ? tags(all.filter(c => c.exit === "ready"), "ok", "finished") : "")
       + Object.entries(sent).map(([to, k]) => `<span class="f-chip back" title="${esc(name)} sent a run back to ${esc(to)} ${k}×">${BACK_ICON}${esc(to)}${k > 1 ? ` ×${k}` : ""}</span>`).join("");
     const note = [on.length ? `${on.length}× active` : "", failed.length ? `<span class="bad">${failed.length} failed</span>` : ""].filter(Boolean).join(" · ");
