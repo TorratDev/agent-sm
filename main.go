@@ -530,7 +530,10 @@ func prepare(c *Ctx) Out {
 			if strings.HasPrefix(failed, checkNotRun) { // the base was never judged
 				why = "base check could not run"
 			}
-			logEvent(map[string]any{"event": "prepare", "err": why, "out": tail(failed, 2000)})
+			// The event keeps only the tail; the full output names the failing test, so keep it in the scratch dir.
+			full := filepath.Join(c.Scratch, "base-check.log")
+			os.WriteFile(full, []byte(failed), 0o644)
+			logEvent(map[string]any{"event": "prepare", "err": why, "out": tail(failed, 2000), "full_out": full})
 			return Fail
 		} else if passed != "" {
 			os.MkdirAll(filepath.Dir(passed), 0o755)

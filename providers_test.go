@@ -642,13 +642,15 @@ esac
 	p.Base = "main"
 	p.Checks = []string{"echo E0034 duplicate; false"}
 	useProfile(t, p)
+	var scratch string
 	run := func(body, existing string) (Out, string) {
 		os.Remove(calls)
 		t.Setenv("SM_TEST_BODY", body)
 		t.Setenv("SM_TEST_EXISTING", existing)
 		testGit(t, repo, "checkout", "-q", "main")
 		sh(repo, "git", "branch", "-D", "sm/issue-5")
-		c := &Ctx{Repo: repo, Issue: 5, Level: levelPR, Scratch: t.TempDir()}
+		scratch = t.TempDir()
+		c := &Ctx{Repo: repo, Issue: 5, Level: levelPR, Scratch: scratch}
 		o := prepare(c)
 		b, _ := os.ReadFile(calls)
 		return o, string(b)
@@ -660,6 +662,10 @@ esac
 	eventsPath = savedEvents
 	if o != Fail || strings.Contains(got, "issue create") || strings.Contains(got, "issue comment") {
 		t.Fatalf("a broken base must stop the run and file nothing: %v\n%s", o, got)
+	}
+	// The event keeps only a tail of the output; the full check output must survive for diagnosis.
+	if b, err := os.ReadFile(filepath.Join(scratch, "base-check.log")); err != nil || len(b) == 0 {
+		t.Fatalf("the full base check output was not kept in the scratch dir: %v", err)
 	}
 	// filing that run's diagnosis is the user's call; the bug it files may skip the base check
 	t.Setenv("OPENCODE_API_KEY", "")
