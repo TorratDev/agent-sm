@@ -154,7 +154,9 @@ sandbox (`sandbox.go`). Every step gets `read,grep,find,ls,bash`; steps that edi
   `/tmp` and `/run`. Read-only again inside: the `PATH` directories under home, `GOROOT` when it is
   under home, `~/.rustup`, `~/.dotnet`, pi's install and login (`~/.pi/agent`), `add_dirs` and the
   prompt files. The worktree is the only writable host directory, and only for steps that edit;
-  anything written elsewhere vanishes with the sandbox. The Go module and build caches,
+  anything written elsewhere vanishes with the sandbox. The empty home and `/tmp` are directories on
+  disk (`<state>/agent-sm/sandbox-tmp`), deleted when the session ends, so a large download does not
+  take RAM the way tmpfs would. The Go module and build caches,
   Cargo's registry and git caches and NuGet packages: the agent writes only agent-sm's own cache
   (`<state>/agent-sm/sandbox-cache`), never the host's, so its downloads persist between steps and it
   cannot change what the host's checks build with. With bwrap 0.11 or later the host's caches are the

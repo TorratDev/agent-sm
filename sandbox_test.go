@@ -43,8 +43,9 @@ func TestBwrapSandboxIsolates(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(home, "secret"), "token", 0o600)
 	writeFile(t, filepath.Join(files, "prompt.md"), "prompt", 0o600)
+	tmp := realTempDir(t)
 	run := func(writable bool, script string) (string, error) {
-		args, err := bwrapArgs(wt, files, writable)
+		args, err := bwrapArgs(wt, files, tmp, writable)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,6 +61,15 @@ echo edit > edited.txt && git status --short`)
 	}
 	if _, err := os.Stat(filepath.Join(home, "escape")); err == nil {
 		t.Fatal("a write outside the worktree reached the host")
+	}
+	// home and /tmp are on disk under tmp, not tmpfs that holds RAM.
+	if out, err := run(false, "echo t > /tmp/big"); err != nil {
+		t.Fatalf("sandbox /tmp not writable: %v %s", err, out)
+	}
+	for _, f := range []string{"home/escape", "tmp/big"} {
+		if _, err := os.Stat(filepath.Join(tmp, f)); err != nil {
+			t.Fatalf("%s is not on disk: %v", f, err)
+		}
 	}
 	if b, _ := os.ReadFile(filepath.Join(wt, "edited.txt")); string(b) != "edit\n" {
 		t.Fatal("the edit step's write did not reach the worktree")
@@ -123,7 +133,7 @@ func TestBwrapSandboxReadsLinkedFiles(t *testing.T) {
 	if err := linkFiles(main, wt, settings.Links); err != nil {
 		t.Fatal(err)
 	}
-	args, err := bwrapArgs(wt, realTempDir(t), true)
+	args, err := bwrapArgs(wt, realTempDir(t), realTempDir(t), true)
 	if err != nil {
 		t.Fatal(err)
 	}
