@@ -572,6 +572,15 @@ func TestTranscriptIOFailure(t *testing.T) {
 	}
 }
 
+func TestCheckCommandDropsRunSettings(t *testing.T) {
+	useProfile(t, defaultProfile("pi"))
+	t.Setenv("SM_BUDGET", "7")
+	out, err := checkCommand(t.TempDir(), `echo "budget=$SM_BUDGET scratch=$SM_SCRATCH"`, "SM_SCRATCH=/s")
+	if err != nil || strings.TrimSpace(out) != "budget= scratch=/s" {
+		t.Fatalf("check saw the run's settings or lost its own: %q, %v", out, err)
+	}
+}
+
 func TestCheckCommandsAndReports(t *testing.T) {
 	dir := t.TempDir()
 	p := defaultProfile("pi")

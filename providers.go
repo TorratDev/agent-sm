@@ -115,7 +115,14 @@ func checkCommand(dir, command string, env ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(runCtx, time.Duration(settings.TimeoutMinutes*float64(time.Minute)))
 	defer cancel()
 	cmd := process(ctx, dir, shellPath(), "-c", command)
-	cmd.Env = append(cleanAgentEnv(), env...)
+	// The run's own SM_* settings (SM_BUDGET, SM_PUBLISH, ...) are not the project's: a check that reads
+	// them (agent-sm's own suite does) judges the base differently under a run. Callers pass what checks get.
+	for _, e := range cleanAgentEnv() {
+		if !strings.HasPrefix(e, "SM_") {
+			cmd.Env = append(cmd.Env, e)
+		}
+	}
+	cmd.Env = append(cmd.Env, env...)
 	output := &boundedOutput{limit: 4 << 20}
 	cmd.Stdout, cmd.Stderr = output, output
 	err := cmd.Run()
