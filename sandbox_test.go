@@ -102,6 +102,37 @@ echo edit > edited.txt && git status --short`)
 	}
 }
 
+// A linked ROM dump in a main checkout under home must be readable, not a dangling symlink.
+func TestBwrapSandboxReadsLinkedFiles(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("bwrap is Linux only")
+	}
+	if err := exec.Command("bwrap", "--ro-bind", "/", "/", "--unshare-all", "true").Run(); err != nil {
+		t.Skipf("bwrap cannot create a sandbox here: %v", err)
+	}
+	main, wt := worktreeFixture(t)
+	t.Setenv("HOME", filepath.Dir(main))
+	t.Setenv("SM_SCRATCH_ROOT", realTempDir(t))
+	for _, k := range []string{"GOPATH", "GOMODCACHE", "GOCACHE", "XDG_CACHE_HOME"} {
+		t.Setenv(k, "")
+	}
+	writeFile(t, filepath.Join(main, "pmdb.nds"), "rom", 0o644)
+	old := settings.Links
+	settings.Links = []string{"pmdb.nds"}
+	t.Cleanup(func() { settings.Links = old })
+	if err := linkFiles(main, wt, settings.Links); err != nil {
+		t.Fatal(err)
+	}
+	args, err := bwrapArgs(wt, realTempDir(t), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("bwrap", append(args, "--", "sh", "-c", "cat pmdb.nds; echo x > pmdb.nds && echo WROTE")...).CombinedOutput()
+	if !strings.HasPrefix(string(out), "rom") || strings.Contains(string(out), "WROTE") {
+		t.Fatalf("linked file in sandbox: %v\n%s", err, out)
+	}
+}
+
 func TestSandboxEnvDropsCredentials(t *testing.T) {
 	t.Setenv("GH_TOKEN", "gh-secret")
 	t.Setenv("SSH_AUTH_SOCK", "/run/ssh-secret")

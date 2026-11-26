@@ -186,6 +186,12 @@ func bwrapArgs(repo, files string, writable bool) ([]string, error) {
 	for _, d := range settings.AddDirs {
 		ro(d)
 	}
+	// Linked files are symlinks into the main checkout, which the empty home would otherwise hide.
+	for _, f := range linkNames(settings.Links) {
+		if t, err := filepath.EvalSymlinks(filepath.Join(repo, f)); err == nil && !within(repo, t) {
+			ro(t)
+		}
+	}
 	ro(files)
 	if common, err := gitDir(repo, "--git-common-dir"); err == nil && !within(repo, common) {
 		ro(common) // a worktree's .git file points into the main checkout's .git
