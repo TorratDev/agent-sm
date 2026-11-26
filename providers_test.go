@@ -609,6 +609,13 @@ func TestMain(m *testing.M) {
 		main()
 		os.Exit(0)
 	}
+	// A run's checks inherit its SM_* settings (SM_BUDGET overrides session_limit), so drop them;
+	// tests set their own with t.Setenv. SM_SMOKE is the opt-in for the real agent call.
+	for _, e := range os.Environ() {
+		if k, _, _ := strings.Cut(e, "="); strings.HasPrefix(k, "SM_") && k != "SM_SMOKE" {
+			os.Unsetenv(k)
+		}
+	}
 	os.Exit(m.Run())
 }
 
