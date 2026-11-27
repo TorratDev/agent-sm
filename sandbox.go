@@ -43,8 +43,20 @@ func sandboxed(ctx context.Context, repo, files string, writable bool, args []st
 	}
 	switch sandboxMode {
 	case "bwrap":
-		b, err := bwrapArgs(repo, files, writable)
+		// The agent's /tmp and home live on disk: on tmpfs a downloaded JDK or a venv used RAM until the host ran out.
+		root := filepath.Join(scratchRoot(), "sandbox-tmp")
+		if err := os.MkdirAll(root, 0o700); err != nil {
+			return nil, err
+		}
+		// shortcut: a crashed run leaves its directory here; sweep root at serve start if leftovers pile up.
+		tmp, err := os.MkdirTemp(root, "")
 		if err != nil {
+			return nil, err
+		}
+		context.AfterFunc(ctx, func() { os.RemoveAll(tmp) }) // the caller cancels ctx once pi has exited
+		b, err := bwrapArgs(repo, files, tmp, writable)
+		if err != nil {
+			os.RemoveAll(tmp)
 			return nil, err
 		}
 		cmd := process(ctx, repo, "bwrap", append(append(b, "--", "pi"), args...)...)
@@ -119,20 +131,25 @@ func sandboxEnv() []string {
 	return env
 }
 
-// bwrapArgs mounts the host read-only with an empty home and an empty /tmp and /run, then
+// bwrapArgs mounts the host read-only with an empty home and /tmp (directories under tmp, on
+// disk) and an empty /run, then
 // brings back read-only only what an agent needs: the PATH directories and toolchains under
 // home, pi's code and login, add_dirs and the prompt files. The worktree is the only host
 // directory it can write. Files written anywhere else vanish with the sandbox.
-func bwrapArgs(repo, files string, writable bool) ([]string, error) {
+func bwrapArgs(repo, files, tmp string, writable bool) ([]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
+	tmpDir, homeDir := filepath.Join(tmp, "tmp"), filepath.Join(tmp, "home")
+	if err := errors.Join(os.MkdirAll(tmpDir, 0o700), os.MkdirAll(homeDir, 0o700)); err != nil {
+		return nil, err
+	}
 	args := []string{"--die-with-parent", "--new-session", "--unshare-all", "--share-net",
-		"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", "/run",
+		"--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmpDir, "/tmp", "--tmpfs", "/run",
 		// systemd hosts point /etc/resolv.conf here; without it there is no DNS.
 		"--ro-bind-try", "/run/systemd/resolve", "/run/systemd/resolve",
-		"--tmpfs", home}
+		"--bind", homeDir, home}
 	ro := func(p string) { args = append(args, "--ro-bind-try", p, p) }
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		if dir != "" && within(home, dir) {
@@ -185,6 +202,12 @@ func bwrapArgs(repo, files string, writable bool) ([]string, error) {
 	}
 	for _, d := range settings.AddDirs {
 		ro(d)
+	}
+	// Linked files are symlinks into the main checkout, which the empty home would otherwise hide.
+	for _, f := range linkNames(settings.Links) {
+		if t, err := filepath.EvalSymlinks(filepath.Join(repo, f)); err == nil && !within(repo, t) {
+			ro(t)
+		}
 	}
 	ro(files)
 	if common, err := gitDir(repo, "--git-common-dir"); err == nil && !within(repo, common) {

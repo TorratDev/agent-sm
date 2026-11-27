@@ -43,8 +43,9 @@ func TestBwrapSandboxIsolates(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(home, "secret"), "token", 0o600)
 	writeFile(t, filepath.Join(files, "prompt.md"), "prompt", 0o600)
+	tmp := realTempDir(t)
 	run := func(writable bool, script string) (string, error) {
-		args, err := bwrapArgs(wt, files, writable)
+		args, err := bwrapArgs(wt, files, tmp, writable)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,6 +61,15 @@ echo edit > edited.txt && git status --short`)
 	}
 	if _, err := os.Stat(filepath.Join(home, "escape")); err == nil {
 		t.Fatal("a write outside the worktree reached the host")
+	}
+	// home and /tmp are on disk under tmp, not tmpfs that holds RAM.
+	if out, err := run(false, "echo t > /tmp/big"); err != nil {
+		t.Fatalf("sandbox /tmp not writable: %v %s", err, out)
+	}
+	for _, f := range []string{"home/escape", "tmp/big"} {
+		if _, err := os.Stat(filepath.Join(tmp, f)); err != nil {
+			t.Fatalf("%s is not on disk: %v", f, err)
+		}
 	}
 	if b, _ := os.ReadFile(filepath.Join(wt, "edited.txt")); string(b) != "edit\n" {
 		t.Fatal("the edit step's write did not reach the worktree")
@@ -99,6 +109,37 @@ echo edit > edited.txt && git status --short`)
 	}
 	if b, _ := os.ReadFile(filepath.Join(mc, "hostmod")); string(b) != "host" {
 		t.Fatal("the agent changed the host's module cache through the overlay")
+	}
+}
+
+// A linked ROM dump in a main checkout under home must be readable, not a dangling symlink.
+func TestBwrapSandboxReadsLinkedFiles(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("bwrap is Linux only")
+	}
+	if err := exec.Command("bwrap", "--ro-bind", "/", "/", "--unshare-all", "true").Run(); err != nil {
+		t.Skipf("bwrap cannot create a sandbox here: %v", err)
+	}
+	main, wt := worktreeFixture(t)
+	t.Setenv("HOME", filepath.Dir(main))
+	t.Setenv("SM_SCRATCH_ROOT", realTempDir(t))
+	for _, k := range []string{"GOPATH", "GOMODCACHE", "GOCACHE", "XDG_CACHE_HOME"} {
+		t.Setenv(k, "")
+	}
+	writeFile(t, filepath.Join(main, "pmdb.nds"), "rom", 0o644)
+	old := settings.Links
+	settings.Links = []string{"pmdb.nds"}
+	t.Cleanup(func() { settings.Links = old })
+	if err := linkFiles(main, wt, settings.Links); err != nil {
+		t.Fatal(err)
+	}
+	args, err := bwrapArgs(wt, realTempDir(t), realTempDir(t), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("bwrap", append(args, "--", "sh", "-c", "cat pmdb.nds; echo x > pmdb.nds && echo WROTE")...).CombinedOutput()
+	if !strings.HasPrefix(string(out), "rom") || strings.Contains(string(out), "WROTE") {
+		t.Fatalf("linked file in sandbox: %v\n%s", err, out)
 	}
 }
 
@@ -195,5 +236,18 @@ func TestSandboxPreflightSkipsWithoutPodman(t *testing.T) {
 	sandboxMode, sandboxOff = "bwrap", false
 	if err := sandboxPreflight(); err != nil {
 		t.Errorf("bwrap: %v", err)
+	}
+}
+
+// The diagnose step passes the whole scratch directory as its prompt files: podman must mount it
+// at /sm, where the auditor's prompt says it is, and find the prompt file in its transcripts.
+func TestPodmanMountsScratchForAuditor(t *testing.T) {
+	scratch := t.TempDir()
+	prompt := filepath.Join(scratch, "transcripts", "pi-diagnose-1", "prompt.md")
+	got := strings.Join(mustPodman(t, t.TempDir(), scratch, false, []string{"@" + prompt}), " ")
+	for _, w := range []string{scratch + ":/sm:ro", "@/sm/transcripts/pi-diagnose-1/prompt.md"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("missing %q in:\n%s", w, got)
+		}
 	}
 }
