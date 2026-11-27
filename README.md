@@ -33,7 +33,8 @@ worktree does not rebuild a Rust project from scratch.
     agent-sm stats [file]                       # per-state cost, models, tools used, denials
     agent-sm allow [file]                       # allow lists suggested by the stats, as SM_ALLOW_FILE JSON
 
-Sub-issues: on the page, an issue with GitHub sub-issues shows its progress. Selecting it queues
+Sub-issues: the page lists unblocked issues first, then blocked/non-parent issues, then parents;
+bugs lead each group. An issue with GitHub sub-issues shows its progress. Selecting it queues
 its open sub-issues in its place; the issue itself never runs. If all its
 sub-issues are already closed, selecting it closes the issue as completed (not in service mode). A sub-issue is
 skipped when GitHub lists an open issue as blocking it, when its body's explicit dependency entries
