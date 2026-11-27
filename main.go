@@ -35,7 +35,7 @@ func rolePrompt(s State) string {
 	role, _ := promptFS.ReadFile(dir + steps[s].Role + ".md")
 	text := string(rtk) + "\n\n" + strings.ReplaceAll(string(role), defaultProbePython, probePython())
 	if settings.Management.Mode == "service" {
-		text += "\n\nThe service supplies tracker context and owns all GitHub/Jira operations. Do not run tracker commands or skills. Only when decomposition is needed, you may include an issue_plan matching the supplied result schema; it is an unapproved proposal, never an instruction to apply changes. In issue_plan, parent and depends_on are local item ids from the same plan, never issue numbers. To attach tasks to the dispatched issue, add a story item with its number set to that issue's number and make the tasks children of that story's local id."
+		text += "\n\nThe service supplies tracker context and owns all GitHub/Jira operations. Do not run tracker commands or skills. Only when decomposition is needed, you may include an issue_plan matching the supplied result schema (its items must have 1 to 100 entries; omit issue_plan rather than sending an empty list); it is an unapproved proposal, never an instruction to apply changes. In issue_plan, parent and depends_on are local item ids from the same plan, never issue numbers. To attach tasks to the dispatched issue, add a story item with its number set to that issue's number and make the tasks children of that story's local id."
 	}
 	return text
 }
@@ -628,6 +628,9 @@ func plan(c *Ctx) Out {
 		c.Feedback = "your last session stopped as blocked and the task was re-planned. Its report:\n" + c.Summary
 	}
 	c.Objective, c.Points, c.PointsDerived, c.Files, c.Verification, c.Units = r.Objective, r.Points, r.PointsDerived, r.Files, r.Verification, r.Units
+	if r.IssuePlan != nil && len(r.IssuePlan.Items) == 0 { // an empty proposal means none: the planner's optional output must not fail the run
+		r.IssuePlan = nil
+	}
 	if r.IssuePlan != nil {
 		if err := r.IssuePlan.validate(); err != nil {
 			logEvent(map[string]any{"event": "invalid-issue-plan", "err": err.Error()})
