@@ -589,11 +589,13 @@ function renderDirs() {
 // Bugs first, in the list and in the run order: a broken base blocks every other issue.
 const isBug = n => ISSUES.some(i => i.number === n && i.labels.some(l => l.name.toLowerCase() === "bug"));
 const bugsFirst = (a, b) => isBug(b) - isBug(a) || a - b;
+// Runnable issues lead, then blocked/non-parent issues, then parents (which expand to their children).
+const issueRank = i => i.subs ? 2 : i.blocked ? 1 : 0;
 
 function renderIssues() {
   const q = $("filter").value.toLowerCase();
   const rows = ISSUES.filter(i => !q || ("#" + i.number + " " + i.title + " " + i.labels.map(l => l.name).join(" ")).toLowerCase().includes(q))
-    .sort((a, b) => isBug(b.number) - isBug(a.number)); // stable: keeps the API's newest-first order within each group
+    .sort((a, b) => issueRank(a) - issueRank(b) || isBug(b.number) - isBug(a.number)); // stable: newest first within each group
   const hex = c => /^[0-9a-f]{6}$/i.test(c) ? "#" + c : "#8a93a6";
   $("issueList").innerHTML = rows.map(i => `<li><label class="issue${SEL.has(i.number) ? " on" : ""}">
     <input type="checkbox" data-n="${i.number}" ${SEL.has(i.number) ? "checked" : ""}><span class="inum">#${i.number}</span><span class="ititle">${esc(i.title)}</span>
