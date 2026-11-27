@@ -255,7 +255,12 @@ func followUp(c *Ctx, exit Exit) {
 		return
 	}
 	url, ok := gh(c, "issue", "create", "--title", c.Title, "--body", body, "--label", "follow-up")
-	if !ok { // e.g. no "follow-up" label: keep the remaining work on the issue, or it is lost
+	if !ok { // most likely the repo has no "follow-up" label yet: create it and retry once
+		if _, made := gh(c, "label", "create", "follow-up", "--description", "Remaining work from an agent-sm run"); made {
+			url, ok = gh(c, "issue", "create", "--title", c.Title, "--body", body, "--label", "follow-up")
+		}
+	}
+	if !ok { // keep the remaining work on the issue, or it is lost
 		gh(c, "issue", "comment", strconv.Itoa(c.Issue), "--body", fmt.Sprintf(
 			"agent-sm ended (%s: %s) and could not file a follow-up issue.\n\n%s", exit, reason, work))
 		return
